@@ -29,6 +29,9 @@ class Model:
             dim_j_lower_lim_idx, dim_j_upper_lim_idx = region.limits_indices(j)
             for n in range(dim_j_lower_lim_idx+1, dim_j_upper_lim_idx):
                 L, R = region.split(j, n)
+                if L is None or R is None:
+                    continue # no split
+                #:
                 L.set_cost(cost_fn(L))
                 R.set_cost(cost_fn(R))
                 assert region.count_examples() == L.count_examples() + R.count_examples()

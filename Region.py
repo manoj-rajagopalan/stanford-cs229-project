@@ -96,6 +96,8 @@ class Region:
 
     def split(self, j, n) -> typing.Tuple[typing.Self, typing.Self]:
         assert self.lower_limit_indices[j] <= n < self.upper_limit_indices[j]
+        no_split = (None, None)
+
         theta = Region.split_points[j][n]
 
         # Left child region
@@ -104,17 +106,21 @@ class Region:
         L.upper_limit_indices[j] = n
         predicate_local_indices = np.argwhere(self.dataset.X[self.dataset_indices][:,j] < theta).flatten()
         L.dataset_indices = self.dataset_indices[predicate_local_indices] # global indices
-        assert len(L.dataset_indices) > 0
-        
+        if len(L.dataset_indices) == 0:
+            return no_split
+        #:
+
         # Right child region
         R: Region = self.copy()
         R.predicate = Predicate_GreaterEqual(theta)
         R.lower_limit_indices[j] = n
         predicate_local_indices = np.argwhere(self.dataset.X[self.dataset_indices][:,j] >= theta).flatten()
         R.dataset_indices = self.dataset_indices[predicate_local_indices] # global indices
-        assert len(R.dataset_indices) > 0
-
         assert len(L.dataset_indices) + len(R.dataset_indices) == len(self.dataset_indices)
+        if len(R.dataset_indices) == 0:
+            return no_split
+        #:
+
         return L, R
     #:split()
 
