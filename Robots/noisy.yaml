@@ -1,0 +1,13 @@
+baseline: 0.1
+
+left_wheel:
+  type: noisy
+  radius: 0.02
+  perturbations:
+    - angular_position_deg: 35
+      angular_extent_deg: 20
+      scale: 1.25
+
+right_wheel:
+  type: simple
+  radius: 0.02

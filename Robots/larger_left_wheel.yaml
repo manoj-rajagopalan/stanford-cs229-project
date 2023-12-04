@@ -1,0 +1,12 @@
+# Like the golden robot but with larger left wheel
+# Both wheels are 4 cm in diameter.
+
+baseline: 0.1
+
+left_wheel:
+  type: simple
+  radius: 0.02
+
+right_wheel:
+  type: simple
+  radius: 0.025
