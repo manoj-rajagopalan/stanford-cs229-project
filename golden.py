@@ -46,7 +46,7 @@ def generate_golden_trajectory_straight_line(golden_robot: robot.DDMR) -> Trajec
 
     # Simulate trajectory
     s0 = np.array([0,0,0,0,0])
-    trajectory = golden_robot.execute_control_policy(t, u, s0, name=f'straight-{golden_robot.name}')
+    trajectory = golden_robot.execute_control_policy(t, kSimΔt, u, s0, name=f'straight-{golden_robot.name}')
     return trajectory
 #:generate_golden_trajectory_straight_line()
 
@@ -76,7 +76,7 @@ def generate_golden_trajectory_spin(golden_robot: robot.DDMR) -> Trajectory:
 
     # Simulate trajectory
     s0 = np.array([0,0,0,0,0])
-    trajectory = golden_robot.execute_control_policy(t, u, s0, name=f'spin-{golden_robot.name}')
+    trajectory = golden_robot.execute_control_policy(t, kSimΔt, u, s0, name=f'spin-{golden_robot.name}')
     return trajectory
 #:generate_golden_trajectory_rotate_in_place()
 
@@ -93,7 +93,7 @@ def generate_golden_trajectory_circle_common(t_final: float,
     t[-1] = min(t_final, t[-1]) # placate IVP solver
     φdots = np.repeat(np.array([[φ_l, φ_r]]), len(t)-1, axis=0)
     s0 = np.array([0,0,0,0,0])
-    trajectory = golden_robot.execute_control_policy(t, φdots, s0, name='')
+    trajectory = golden_robot.execute_control_policy(t, kSimΔt, φdots, s0, name='')
     return trajectory
     # sol = scipy.integrate.solve_ivp(robot.dynamics, [0,t_final], s0, t_eval=t, max_step=kSimΔt,
     #                                 args=(t, kSimΔt, φdots, golden_robot))
@@ -142,7 +142,7 @@ def generate_golden_trajectory_tri_wave_φ(golden_robot: robot.DDMR) -> Trajecto
     t_cycle = int(32) # seconds
     φdot_r_rate = φdot_max_mag_rps * 2*np.pi / (t_cycle // 4)
     φdot_l_rate = 2 * φdot_r_rate
-    t = np.linspace(0, t_cycle, kMeasurementHz * t_cycle + 1)
+    t = np.linspace(0, t_cycle, kSimHz * t_cycle + 1)
     u = np.zeros((len(t)-1, 2))
 
     num_qtr_cycle_samples = len(u) // 4
@@ -161,7 +161,8 @@ def generate_golden_trajectory_tri_wave_φ(golden_robot: robot.DDMR) -> Trajecto
     u[4*num_8th_cycle_samples:, 0] = u[:4*num_8th_cycle_samples, 0]
 
     s0 = np.array([0,0,0,0,0])
-    trajectory = golden_robot.execute_control_policy(t, u, s0, name=f'tri_wave_phi-{golden_robot.name}')
+    trajectory = golden_robot.execute_control_policy(t, kSimΔt, u, s0,
+                                                     name=f'tri_wave_phi-{golden_robot.name}')
     return trajectory
 #:generate_golden_trajectory_tri_wave_φ()
 
@@ -217,7 +218,7 @@ def generate_trajectories(golden_robot: robot.DDMR) -> dict:
 if __name__ == "__main__":
     os.makedirs('Results', exist_ok=True)
 
-    golden_robot = robot.DDMR(name='Golden', config_filename='Robots/golden.yaml')
+    golden_robot = robot.DDMR(config_filename='Robots/golden.yaml')
     golden_trajectories = generate_trajectories(golden_robot)
     # Save to .npz file
     # https://stackoverflow.com/a/33878297

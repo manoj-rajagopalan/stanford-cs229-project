@@ -7,10 +7,10 @@ from trajectory import Trajectory
 from constants import *
 
 class DDMR:
-    def __init__(self, name, config_filename) -> None:
-        self.name = name
+    def __init__(self, config_filename) -> None:
         with open(config_filename, 'r') as config_file:
             cfg = yaml.safe_load(config_file)
+            self.name = cfg['name']
             self.L = 0.5 * cfg['baseline']
             self.left_wheel = wheel_factory(cfg['left_wheel'])
             self.right_wheel = wheel_factory(cfg['right_wheel'])
@@ -31,11 +31,11 @@ class DDMR:
         return np.array([x_dot, y_dot, θ_dot, φdot_l, φdot_r])
     #: dynamics()
 
-    def execute_control_policy(self, t, u, s0 = np.array([0, 0, 0, 0, 0]), name=''):
+    def execute_control_policy(self, t, Δt, u, s0 = np.array([0, 0, 0, 0, 0]), name=''):
         sol = scipy.integrate.solve_ivp(dynamics,
                                         (t[0], t[-1]), s0,
                                         t_eval=t, max_step=kSimΔt,
-                                        args=(t, kSimΔt, u, self))
+                                        args=(t, Δt, u, self))
         assert len(sol.t) == len(u) + 1
         s = sol.y.T
         assert len(s) == len(t)
