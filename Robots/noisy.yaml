@@ -1,4 +1,6 @@
-baseline: 0.1
+name: Noisy
+
+baseline: 0.12
 
 left_wheel:
   type: noisy

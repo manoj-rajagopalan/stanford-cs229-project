@@ -1,14 +1,15 @@
-# Like the golden robot but with smaller left wheel
+# Reference robot which we think we have.
 # Both wheels are 4 cm in diameter.
 
-name: SmallerLeftWheel
+name: SmallerBaseline
 
-baseline: 0.1
+baseline: 0.08
 
 left_wheel:
   type: simple
-  radius: 0.015
+  radius: 0.02
 
 right_wheel:
   type: simple
   radius: 0.02
+
