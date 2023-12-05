@@ -229,3 +229,4 @@ if __name__ == "__main__":
         npz_items['u_' + traj.name] = traj.u
     #:
     np.savez('Results/golden_trajectories.npz', **npz_items)
+#:__main__()
