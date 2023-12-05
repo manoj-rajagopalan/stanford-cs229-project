@@ -14,7 +14,8 @@ def learn_system_params_via_SGD(dataset_trajectory: Trajectory,
                                 ref_robot: DDMR, # the one we think this one is, for initial estimates
                                 N_φ: int, # number of angular bins per wheel
                                 κ_sqr: float,
-                                α: float):
+                                α: float,
+                                must_shuffle: bool):
     '''
     κ_sqr: parameter for Mahalanobis distance matrix [[κ_sqr, 0], [0, 1]]
     α: learning rate
@@ -36,8 +37,10 @@ def learn_system_params_via_SGD(dataset_trajectory: Trajectory,
     grad_params = np.zeros_like(params)
     v, θdot = dataset_v_θdot[:,0], dataset_v_θdot[:,1] # separate label categories
     
-    shuffle = \
-        np.random.default_rng().permutation(np.arange(0, len(dataset_trajectory.u)))
+    if must_shuffle:
+        shuffle = \
+            np.random.default_rng().permutation(np.arange(0, len(dataset_trajectory.u)))
+    #:if
 
     for i_epoch in range(num_epochs):
         print(f'Epoch {i_epoch+1}/{num_epochs}')
@@ -46,7 +49,7 @@ def learn_system_params_via_SGD(dataset_trajectory: Trajectory,
             grad_params.fill(0.0)
             loss = 0
             for j in range(batch_start, batch_end):
-                i = shuffle[j]
+                i = shuffle[j] if must_shuffle else j
                 _, _, _, φ_l, φ_r = dataset_trajectory.s[i+1]
                 # argwhere returns 2D array of shape (1,1)
                 n_l = np.argwhere(np.logical_and(φ_bins[:-1] <= φ_l, φ_l < φ_bins[1:]))
@@ -104,6 +107,9 @@ if __name__ == "__main__":
     for f in robot_yaml_filenames:
         robot = DDMR(config_filename=f'Robots/{f}.yaml')
         saved = np.load(f'Results/dataset-{robot.name}.npz')
+        results_dict = {}
+
+        # Experiment with Mahalanobis and MSE loss functions
         for i_loss_type in range(2):
             loss_type = 'mahalanobis' if i_loss_type == 0 else 'mse'
             print('----------------')
@@ -112,14 +118,22 @@ if __name__ == "__main__":
                                             saved['s_measured'],
                                             saved['u_measured'],
                                             name=f'dataset-{f}-measured')
-            dataset_aux = np.vstack((saved['v_measured'], saved['θdot_measured'])).T
-            R_ls, R_rs, L = learn_system_params_via_SGD(dataset_trajectory, dataset_aux,
-                                                        golden_robot,
-                                                        N_φ, κ_sqrs[i_loss_type], α)
-            np.savez(f'Results/sgd-{robot.name}-{loss_type}.npz',
-                     R_ls=R_ls, R_rs=R_rs, L=L)
-            
+            dataset_aux = np.vstack((saved['v_measured'],
+                                     saved['θdot_measured'])).T
+
+            # Experiment with dataset-shuffling to study effects
+            for must_shuffle in [False, True]:
+                R_ls, R_rs, L = learn_system_params_via_SGD(dataset_trajectory, dataset_aux,
+                                                            golden_robot,
+                                                            N_φ, κ_sqrs[i_loss_type], α,
+                                                            must_shuffle)
+                shuffle_suffix = '-shuffled' if must_shuffle else ''
+                results_dict[f'R_ls-{loss_type}{shuffle_suffix}'] = R_ls
+                results_dict[f'R_rs-{loss_type}{shuffle_suffix}'] = R_rs
+                results_dict[f'L-{loss_type}{shuffle_suffix}'] = L
         #:for i_loss_type
+        np.savez(f'Results/sgd-{robot.name}.npz', **results_dict)
+
         # exit()
     #:for f
 #:__main__
