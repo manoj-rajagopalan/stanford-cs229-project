@@ -123,6 +123,10 @@ def learn_system_params_via_SGD(dataset_trajectory: Trajectory,
 
     model = SgdModel(N_φ)
     model.initialize(ref_robot)
+    # param_init = ref_robot.left_wheel.R \
+    #            + .5 * (np.random.rand(len(model.params)) - 0.5)
+    # param_init[-1] = ref_robot.L + 0.2
+    # model.initialize(param_init)
     loss_fn = SgdMahalanobisLoss(np.array([[κ_sqr, 0],
                                            [   0 , 1]])) # is MSE loss when κ_sqr==1
     batch_size = 20
@@ -199,23 +203,36 @@ def learn_system_params_via_SGD(dataset_trajectory: Trajectory,
         Y_pred = model.predict(X)
         loss = loss_fn(Y_pred, Y)
         epoch_losses[i_epoch] = loss
-        print(f'  Epoch {i_epoch} loss = {loss:0.5f}')
+        print(f'  Epoch {i_epoch+1} loss = {loss:0.5f}')
     #:for i_epoch
 
     return *model.results(), epoch_losses
 #:learn_system_params_via_SGD()
 
-def compute_κ_sqr(R: float, L: float):
+# def compute_κ_sqr(R: float, L: float):
+def compute_κ_sqr(dataset_aux: np.ndarray):
+
+    return 10
+
+    # v, θdot = dataset_aux[:,0], dataset_aux[:,1]
+    # var_v, var_θdot = np.var(v), np.var(θdot)
+    # κ_sqr = var_θdot / var_v
+    # return κ_sqr
+
+
     '''
     Compute a constant to bring v and θdot on the same scale for norm-computations.
 
     R: radius of golden robot's wheel
+    '''
+
     '''
     max_wheel_v = φdot_max_mag_rps * 2*np.pi * R
     max_v = 1/2 * (max_wheel_v + max_wheel_v)
     max_θdot = (1/(2*L)) * (max_wheel_v - 0)
     κ = max_θdot / max_v
     return κ*κ
+    '''
 #:compute_κ_sqr()
 
 
@@ -223,7 +240,7 @@ if __name__ == "__main__":
     N_φ = 30
     
     # Learning rate
-    # 0.001 yields nan very quickly
+    # α = 0.001 # yields nan very quickly
     α = 0.0001
 
     golden_robot = DDMR(config_filename='Robots/golden.yaml')
@@ -231,27 +248,31 @@ if __name__ == "__main__":
     robot_yaml_filenames = ['smaller_left_wheel', 'larger_left_wheel',
                             'smaller_baseline', 'larger_baseline',
                             'noisy', 'noisier']
+
     for f in robot_yaml_filenames:
         robot = DDMR(config_filename=f'Robots/{f}.yaml')
         dataset = np.load(f'Results/dataset-{robot.name}.npz')
-        results_dict = {}
+
+        dataset_trajectory = Trajectory(dataset['t_measured'],
+                                        dataset['s_measured'],
+                                        dataset['u_measured'],
+                                        name=f'dataset-{f}-measured')
+        dataset_aux = np.vstack((dataset['v_measured'],
+                                 dataset['θdot_measured'])).T
 
         # κ = 2*np.pi / (φdot_max_mag_rps * 2*np.pi * golden_robot.left_wheel.R)
-        κ_sqr = compute_κ_sqr(golden_robot.left_wheel.R, golden_robot.L)
+        # κ_sqr = compute_κ_sqr(golden_robot.left_wheel.R, golden_robot.L)
+        κ_sqr = compute_κ_sqr(dataset_aux)
         print(f'Robot {robot.name} κ_sqr = {κ_sqr}')
         κ_sqrs = [κ_sqr, 1] # Mahalanobis distance metric-tensor parameter
+
+        results_dict = {}
 
         # Experiment with Mahalanobis and MSE loss functions
         for i_loss_type in range(2):
             loss_type = 'mahalanobis' if i_loss_type == 0 else 'mse'
             print('----------------')
             print(f'Learning {robot.name} with {loss_type} loss')
-            dataset_trajectory = Trajectory(dataset['t_measured'],
-                                            dataset['s_measured'],
-                                            dataset['u_measured'],
-                                            name=f'dataset-{f}-measured')
-            dataset_aux = np.vstack((dataset['v_measured'],
-                                     dataset['θdot_measured'])).T
 
             # Experiment with dataset-shuffling to study effects
             for is_shuffling_enabled in [False, True]:
@@ -266,12 +287,10 @@ if __name__ == "__main__":
                 results_dict[f'R_rs-{loss_type}{shuffle_suffix}'] = R_rs
                 results_dict[f'L-{loss_type}{shuffle_suffix}'] = L
                 results_dict[f'epoch_losses-{loss_type}{shuffle_suffix}'] = epoch_losses
-                # break
             #:for is_shuffling_enabled
-            # break
-        #:for i_loss_type
-        np.savez(f'Results/sgd-{robot.name}.npz', **results_dict)
 
-        # break
+        #:for i_loss_type
+
+        np.savez(f'Results/sgd-{robot.name}.npz', **results_dict)
     #:for f
 #:__main__
