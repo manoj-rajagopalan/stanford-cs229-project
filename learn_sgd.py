@@ -1,12 +1,17 @@
 import numpy as np
 from tqdm import tqdm
 
-from trajectory import Trajectory
+
+import trajectory
 from robot import DDMR
+from constants import *
+
+Trajectory = trajectory.Trajectory # using namespace
+
 
 def learn_system_params_via_SGD(dataset_trajectory: Trajectory,
-                                dataset_v_θdot,
-                                golden_robot: DDMR,
+                                dataset_v_θdot: np.ndarray, # labels
+                                ref_robot: DDMR, # the one we think this one is, for initial estimates
                                 N_φ: int, # number of angular bins per wheel
                                 κ_sqr: float,
                                 α: float):
@@ -21,23 +26,27 @@ def learn_system_params_via_SGD(dataset_trajectory: Trajectory,
 
     # Initialize with factory estimates
     # Layout: N_φ values for R_l, then N_φ values for R_r, then 1 for 1/L
-    params[:N_φ] = golden_robot.left_wheel.R
-    params[N_φ:-1] = golden_robot.right_wheel.R
-    params[-1] = 1.0 / golden_robot.L
+    params[:N_φ] = ref_robot.left_wheel.R
+    params[N_φ:-1] = ref_robot.right_wheel.R
+    params[-1] = 1.0 / ref_robot.L
 
-    batch_size = 1000
-    num_epochs = 10
+    batch_size = 20
+    num_epochs = 1000
 
     grad_params = np.zeros_like(params)
-    v, θdot = dataset_v_θdot[:,0], dataset_v_θdot[:,1]
+    v, θdot = dataset_v_θdot[:,0], dataset_v_θdot[:,1] # separate label categories
     
+    shuffle = \
+        np.random.default_rng().permutation(np.arange(0, len(dataset_trajectory.u)))
+
     for i_epoch in range(num_epochs):
         print(f'Epoch {i_epoch+1}/{num_epochs}')
         for batch_start in range(0, N_data, batch_size):
             batch_end = min(batch_start + batch_size, N_data)
             grad_params.fill(0.0)
             loss = 0
-            for i in range(batch_start, batch_end):
+            for j in range(batch_start, batch_end):
+                i = shuffle[j]
                 _, _, _, φ_l, φ_r = dataset_trajectory.s[i+1]
                 # argwhere returns 2D array of shape (1,1)
                 n_l = np.argwhere(np.logical_and(φ_bins[:-1] <= φ_l, φ_l < φ_bins[1:]))
@@ -78,3 +87,39 @@ def learn_system_params_via_SGD(dataset_trajectory: Trajectory,
 
     return params[:N_φ], params[N_φ:-1], (1.0 / params[-1])
 #:learn_system_params_via_SGD()
+
+if __name__ == "__main__":
+    N_φ = 30
+    κ = 2*np.pi / φdot_max_mag_rps
+    κ_sqrs = [κ*κ, 1] # Mahalanobis distance metric-tensor parameter
+    
+    # Learning rate
+    # 0.001 yields nan very quickly
+    α = 0.0001
+
+    golden_robot = DDMR(config_filename='Robots/golden.yaml')
+    robot_yaml_filenames = ['smaller_left_wheel', 'larger_left_wheel',
+                            'smaller_baseline', 'larger_baseline',
+                            'noisy', 'noisier']
+    for f in robot_yaml_filenames:
+        robot = DDMR(config_filename=f'Robots/{f}.yaml')
+        saved = np.load(f'Results/dataset-{robot.name}.npz')
+        for i_loss_type in range(2):
+            loss_type = 'mahalanobis' if i_loss_type == 0 else 'mse'
+            print('----------------')
+            print(f'Learning {robot.name} with {loss_type} loss')
+            dataset_trajectory = Trajectory(saved['t_measured'],
+                                            saved['s_measured'],
+                                            saved['u_measured'],
+                                            name=f'dataset-{f}-measured')
+            dataset_aux = np.vstack((saved['v_measured'], saved['θdot_measured'])).T
+            R_ls, R_rs, L = learn_system_params_via_SGD(dataset_trajectory, dataset_aux,
+                                                        golden_robot,
+                                                        N_φ, κ_sqrs[i_loss_type], α)
+            np.savez(f'Results/sgd-{robot.name}-{loss_type}.npz',
+                     R_ls=R_ls, R_rs=R_rs, L=L)
+            
+        #:for i_loss_type
+        # exit()
+    #:for f
+#:__main__
