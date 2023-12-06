@@ -7,15 +7,12 @@ import trajectory
 from robot import DDMR
 from constants import *
 from wheel_model import NoisyWheel
-from run_test_robots_on_golden_controls import run_test_robot_with_golden_controls
+from uncontrolled_behavior import run_robot_with_controls  # yeah, not the best place to source from
+import ideal
 
 Trajectory = trajectory.Trajectory # using namespace
 
-kResultsBasedir = 'Results/SGD'
-
-kRobotYamlFilenames = ['smaller_left_wheel', 'larger_left_wheel',
-                       'smaller_baseline', 'larger_baseline',
-                       'noisy', 'noisier']
+kResultsDir = 'Results/3-SysId_Controlled'
 
 class SgdModel:
     def __init__(self, N_φ: int) -> None:
@@ -29,13 +26,15 @@ class SgdModel:
     def initialize(self, init_object: any) -> None:
         if type(init_object) == DDMR:
             ref_robot: DDMR = init_object
-            self.params[:N_φ] = ref_robot.left_wheel.R
-            self.params[N_φ:-1] = ref_robot.right_wheel.R
+            self.params[:self.N_φ] = ref_robot.left_wheel.R
+            self.params[self.N_φ:-1] = ref_robot.right_wheel.R
             self.params[-1] = 1.0 / ref_robot.L
+
         elif type(init_object) == np.ndarray:
             params_value: np.ndarray = init_object
             assert params_value.shape == self.params.shape
             self.params[:] = params_value[:]
+
         else:
             assert False, 'Invalid initialization object for SgdModel'
         #:
@@ -50,7 +49,7 @@ class SgdModel:
                          axis=2)
         assert n_lr.shape == φ_lr.shape
         self.n_l, self.n_r = np.hsplit(n_lr, 2) # save in self for use in step() below
-        R_l, R_r = self.params[self.n_l], self.params[self.n_r + N_φ]
+        R_l, R_r = self.params[self.n_l], self.params[self.n_r + self.N_φ]
         one_by_L = self.params[-1]
         φdot_l, φdot_r = np.hsplit(X[:, 5:], 2)
         v_pred = 0.5 * (R_r * φdot_r + R_l * φdot_l)
@@ -78,8 +77,8 @@ class SgdModel:
             R_l, R_r = self.params[n_l], self.params[n_r + self.N_φ]
             self.grad_params[n_l] += κ_sqr * v_diff[i] * φdot_l[i]/2 \
                                    - θdot_diff[i] * φdot_l[i]/2 * one_by_L
-            self.grad_params[n_r + N_φ] += κ_sqr * v_diff[i] * φdot_r[i]/2 \
-                                         + θdot_diff[i] * φdot_r[i]/2 * one_by_L
+            self.grad_params[n_r + self.N_φ] += κ_sqr * v_diff[i] * φdot_r[i]/2 \
+                                              + θdot_diff[i] * φdot_r[i]/2 * one_by_L
             self.grad_params[-1] += θdot_diff[i] * (R_r * φdot_r[i] - R_l * φdot_l[i])/2
         #:for i
         self.grad_params /= len(X)
@@ -88,7 +87,7 @@ class SgdModel:
     #:step()
 
     def results(self) -> (np.ndarray, np.ndarray, float):
-        return self.params[:N_φ], self.params[N_φ:-1], 1.0 / self.params[-1]
+        return self.params[:self.N_φ], self.params[self.N_φ:-1], 1.0 / self.params[-1]
     #:
 
 #:Model
@@ -102,9 +101,7 @@ class SgdMahalanobisLoss:
     def __call__(self, Y_pred, Y) -> float:
         Y_diff = Y_pred - Y
         M_Y_diff = self.M @ Y_diff.T
-        # Treat matrix as list of row-vectors and perform element-wise inner-prods
         loss_value = (1/2) * np.sum((1/len(Y)) * Y_diff * M_Y_diff.T)
-        # loss_value = np.einsum('ij,ij->i', (1/len(Y)) * Y_diff, M_Y_diff.T)
         return loss_value
     #:__call__()
 
@@ -142,11 +139,8 @@ def learn_system_params_via_SGD(dataset_trajectory: Trajectory,
     num_epochs = 1000
     epoch_losses = np.zeros(num_epochs)
 
-    # grad_params = np.zeros_like(params) # pre-allocate gradient vector
-
     X = np.hstack((dataset_trajectory.s[1:], dataset_trajectory.u))
     Y = dataset_v_θdot
-    # v, θdot = dataset_v_θdot[:,0], dataset_v_θdot[:,1] # separate label categories
     
     if is_shuffling_enabled:
         shuffle = \
@@ -168,47 +162,11 @@ def learn_system_params_via_SGD(dataset_trajectory: Trajectory,
             loss = loss_fn(Y_pred_i, Y[i])
             model.step(X[i], Y_pred_i - Y[i], α, κ_sqr)
 
-            '''
-            for j in range(batch_start, batch_end):
-                i = shuffle[j] if is_shuffling_enabled else j
-                _, _, _, φ_l, φ_r = dataset_trajectory.s[i+1]
-                # argwhere returns 2D array of shape (1,1)
-                n_l = np.argwhere(np.logical_and(φ_bins[:-1] <= φ_l, φ_l < φ_bins[1:]))
-                n_r = np.argwhere(np.logical_and(φ_bins[:-1] <= φ_r, φ_r < φ_bins[1:]))
-                assert n_l.shape == n_r.shape == (1,1)
-                assert 0 <= n_l < N_φ
-                assert 0 <= n_r < N_φ
-                n_l, n_r = n_l[0,0], n_r[0,0]
-                R_l, R_r = params[n_l], params[N_φ + n_r]
-                one_by_L = params[-1]
-                φdot_l, φdot_r = dataset_trajectory.u[i]
-                v_pred_i = 0.5 * (R_r * φdot_r + R_l * φdot_l)
-                θdot_pred_i = 0.5 * (R_r * φdot_r - R_l * φdot_l) * one_by_L
-
-                # Loss
-                y_pred = np.array([v_pred_i, θdot_pred_i])
-                y = np.array([v[i], θdot[i]])
-                y_diff = y_pred - y
-                v_diff, θdot_diff = y_diff
-                loss += np.inner(y_diff, M @ y_diff)
-
-                # Gradient
-                grad_params[n_l] += κ_sqr * v_diff * φdot_l/2 \
-                                  - θdot_diff * φdot_l/2 * one_by_L
-                grad_params[N_φ + n_r] += κ_sqr * v_diff * φdot_r/2 \
-                                        + θdot_diff * φdot_r/2 * one_by_L
-                grad_params[-1] += θdot_diff * (R_r * φdot_r - R_l * φdot_l)/2
-            #:for i
-            '''
-            # grad_params /= (batch_end - batch_start)
-            # params -= α * grad_params
-
-            # loss /= (batch_end - batch_start)
             batch_num = batch_start // batch_size
             print(f'    Batch {batch_num+1} loss = {loss:0.5f}')
         #:for batch_start
 
-        # End of epoch loss
+        # End-of-epoch loss
         Y_pred = model.predict(X)
         loss = loss_fn(Y_pred, Y)
         epoch_losses[i_epoch] = loss
@@ -283,22 +241,21 @@ def train_robots():
     # α = 0.001 # yields nan very quickly
     α = 0.0001
 
-    golden_robot = DDMR(config_filename='Robots/golden.yaml')
+    ideal_robot = DDMR(config_filename='Robots/Ideal.yaml')
 
-    for robot_descr in kRobotYamlFilenames:
-        robot = DDMR(config_filename=f'Robots/{robot_descr}.yaml')
+    for robot_name in kRobotNames:
+        robot = DDMR(config_filename=f'Robots/{robot_name}.yaml')
+        assert robot_name == robot.name
 
-        dataset = np.load(f'Results/dataset-{robot.name}.npz')
+        dataset = np.load(f'Results/2-Dataset/dataset-{robot.name}.npz')
 
         dataset_trajectory = Trajectory(dataset['t_measured'],
                                         dataset['s_measured'],
                                         dataset['u_measured'],
-                                        name=f'dataset-{robot_descr}-measured')
+                                        name=f'dataset-{robot.name}-measured')
         dataset_aux = np.vstack((dataset['v_measured'],
                                  dataset['θdot_measured'])).T
 
-        # κ = 2*np.pi / (φdot_max_mag_rps * 2*np.pi * golden_robot.left_wheel.R)
-        # κ_sqr = compute_κ_sqr(golden_robot.left_wheel.R, golden_robot.L)
         κ_sqr = compute_κ_sqr(dataset_aux)
         print(f'Robot {robot.name} κ_sqr = {κ_sqr}')
         κ_sqrs = [κ_sqr, 1] # Mahalanobis distance metric-tensor parameter
@@ -316,13 +273,13 @@ def train_robots():
                 R_ls, R_rs, L, epoch_losses = \
                     learn_system_params_via_SGD(dataset_trajectory, # X
                                                 dataset_aux,  # Y
-                                                golden_robot,
+                                                ideal_robot,
                                                 N_φ, κ_sqrs[i_loss_type], α,
                                                 is_shuffling_enabled)
                 shuffle_suffix = '-shuffled' if is_shuffling_enabled else ''
-                learnt_robot = make_robot(f'robot-SGD-{robot.name}-{loss_type}{shuffle_suffix}',
-                                          L, R_ls, R_rs, golden_robot.left_wheel.R)
-                learnt_robot.write_to_file(f'{kResultsBasedir}/{learnt_robot.name}.yaml')
+                learnt_robot = make_robot(f'robot-sysId-{robot.name}-{loss_type}{shuffle_suffix}',
+                                          L, R_ls, R_rs, ideal_robot.left_wheel.R)
+                learnt_robot.write_to_file(f'{kResultsDir}/{learnt_robot.name}.yaml')
                 results_dict[f'R_ls-{loss_type}{shuffle_suffix}'] = R_ls
                 results_dict[f'R_rs-{loss_type}{shuffle_suffix}'] = R_rs
                 results_dict[f'L-{loss_type}{shuffle_suffix}'] = L
@@ -331,16 +288,16 @@ def train_robots():
 
         #:for i_loss_type
 
-        np.savez(f'{kResultsBasedir}/sgd-{robot.name}.npz', **results_dict)
+        np.savez(f'{kResultsDir}/sysId-{robot.name}.npz', **results_dict)
     #:for f
 
 #:train_robots()
 
 
 def plot_convergence_profiles() -> None:
-    for robot_descr in kRobotYamlFilenames:
-        robot = DDMR(config_filename=f'Robots/{robot_descr}.yaml')
-        results = np.load(f'{kResultsBasedir}/sgd-{robot.name}.npz')
+    for robot_name in kRobotNames:
+        robot = DDMR(config_filename=f'Robots/{robot_name}.yaml')
+        results = np.load(f'{kResultsDir}/sysId-{robot.name}.npz')
         _, ax = plt.subplots()
         epoch_losses_mah = results['epoch_losses-mahalanobis']
         epoch_losses_mah_shuf = results['epoch_losses-mahalanobis-shuffled']
@@ -359,37 +316,28 @@ def plot_convergence_profiles() -> None:
         ax.set_ylabel('Loss')
         ax.set_yscale('log')
         ax.set_title(f'SGD convergence: robot {robot.name}')
-        plt.savefig(f'{kResultsBasedir}/epoch_losses-{robot.name}.png')
+        plt.savefig(f'{kResultsDir}/epoch_losses-{robot.name}.png')
         plt.close()
     #:for robot
 #:plot_convergence_profiles()
 
 
-def run_learnt_robots_on_golden_trajectories():
-    npz = np.load('Results/golden_trajectories.npz')
-    traj_keys = ['straight', 'spin', 'circle_ccw', 'circle_cw', 'figureOf8', 'tri_wave_phi']
-    golden_trajectories = []
-    for traj_key in traj_keys:
-        traj_name = traj_key + '-Golden'
-        golden_trajectory = Trajectory(npz['t_'+traj_name],
-                                       npz['s_'+traj_name],
-                                       npz['u_'+traj_name],
-                                       name=traj_name)
-        golden_trajectories.append(golden_trajectory)
-    #:
-    tests_robots = [DDMR(f'Robots/{f}.yaml') for f in kRobotYamlFilenames]
-    learnt_robots = [DDMR(f'{kResultsBasedir}/robot-SGD-{robot.name}-mahalanobis-shuffled.yaml') for robot in tests_robots]
+def run_learnt_robots_on_ideal_trajectories():
+    ideal_trajectories = ideal.load_trajectories()
+    real_robots = [DDMR(f'Robots/{f}.yaml') for f in kRobotNames]
+    learnt_robots = [DDMR(f'{kResultsDir}/robot-sysId-{robot.name}-mahalanobis-shuffled.yaml')
+                     for robot in real_robots]
     for learnt_robot in learnt_robots:
-        run_test_robot_with_golden_controls(learnt_robot,
-                                            golden_trajectories,
-                                            output_npz_filename=f'{kResultsBasedir}/robot-SGD-{learnt_robot.name}-mse-shuffled-on-golden-trajectories.npz')
+        run_robot_with_controls(learnt_robot,
+                                ideal_trajectories,
+                                output_npz_filename=f'{kResultsDir}/{learnt_robot.name}-on-ideal-trajectories.npz')
     #:
-#:run_learnt_robots_on_golden_trajectories()
+#:run_learnt_robots_on_ideal_trajectories()
 
 
 if __name__ == "__main__":
-    # os.makedirs(kResultsBasedir, exist_ok=True)
-    # train_robots()
-    # plot_convergence_profiles()
-    run_learnt_robots_on_golden_trajectories()
+    os.makedirs(kResultsDir, exist_ok=True)
+    train_robots()
+    plot_convergence_profiles()
+    run_learnt_robots_on_ideal_trajectories()
 #:__main__
