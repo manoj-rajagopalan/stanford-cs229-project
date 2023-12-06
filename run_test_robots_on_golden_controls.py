@@ -4,7 +4,8 @@ import robot
 from trajectory import Trajectory
 
 def run_test_robot_with_golden_controls(test_robot: robot.DDMR,
-                                        golden_trajectories: list) -> ModuleNotFoundError:
+                                        golden_trajectories: list[Trajectory],
+                                        output_npz_filename: str) -> None:
     npz_items = {}
     for traj in golden_trajectories:
         traj_name = traj.name.replace('Golden', test_robot.name)
@@ -17,7 +18,7 @@ def run_test_robot_with_golden_controls(test_robot: robot.DDMR,
         npz_items['s_' + traj_name] = traj.s
         npz_items['u_' + traj_name] = traj.u
     #:for
-    np.savez('Results/test_robot_trajectories.npz', **npz_items)
+    np.savez(output_npz_filename, **npz_items)
 #:run_test_robot_with_golden_controls()
 
 if __name__ == "__main__":
@@ -44,5 +45,9 @@ if __name__ == "__main__":
         golden_trajectories.append(golden_trajectory)
     #:
     for test_robot in test_robots:
-        run_test_robot_with_golden_controls(test_robot, golden_trajectories)
+        run_test_robot_with_golden_controls(test_robot,
+                                            golden_trajectories,
+                                            output_npz_filename='Results/test_robot_trajectories.npz')
     #:
+
+#:__main__
