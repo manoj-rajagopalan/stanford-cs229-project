@@ -199,6 +199,20 @@ def generate_trajectories(ideal_robot: robot.DDMR) -> dict:
     return result
 #: generate_trajectories()
 
+def load_trajectories():
+    npz = np.load(f'{kResultsDir}/ideal_trajectories.npz')
+    ideal_trajectories = []
+    for traj_key in kIdealTrajectoryKeys:
+        traj_name = traj_key + '-Ideal'
+        ideal_trajectory = Trajectory(npz['t_'+traj_name],
+                                      npz['s_'+traj_name],
+                                      npz['u_'+traj_name],
+                                      name=traj_name)
+        ideal_trajectories.append(ideal_trajectory)
+    #:
+    return ideal_trajectories
+#:load_trajectories()
+
 if __name__ == "__main__":
     os.makedirs(kResultsDir, exist_ok=True)
 
