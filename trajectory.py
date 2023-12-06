@@ -10,7 +10,7 @@ class Trajectory:
         self.name = name
     #:
 
-    def plot(self, must_print_markers: bool = True) -> None:
+    def plot(self, results_dir: str) -> None:
         _, ax1 = plt.subplots()
         ax1.plot(self.t, self.s[:,0], 'r-')
         ax1.plot(self.t, self.s[:,1], 'b-')
@@ -22,7 +22,7 @@ class Trajectory:
         ax2.plot(self.t, self.s[:,2] * 180/np.pi, 'g-')
         ax2.set_ylim(bottom=np.min(self.s[:,2]), top=np.max(self.s[:,2]))
         ax2.set_ylabel('$\\theta$ (deg)')
-        plt.savefig(f'Results/{self.name}-state.png')
+        plt.savefig(f'{results_dir}/{self.name}-state.png')
 
         _, ax = plt.subplots()
         xs, ys = self.s[:,0], self.s[:,1]
@@ -33,22 +33,19 @@ class Trajectory:
         max_range = np.max([x_range, y_range])
 
         ax.plot(self.s[:,0], self.s[:,1])
-        ax.set_title('Trajectory')
+        ax.set_title(f'Trajectory {self.name}')
         ax.set_xlabel('$x$ (m)')
         ax.set_ylabel('$y$ (m)')
         ax.set_xlim(x_mid - 1.2*max_range/2, x_mid + 1.2*max_range/2)
         ax.set_ylim(y_mid - 1.2*max_range/2, y_mid + 1.2*max_range/2)
+
+        # Start/stop markers
+        r_start = 0.015 * max_range
+        r_stop = 0.01 * max_range
+        ax.add_patch(ptch.Circle((self.s[0,0], self.s[0,1]), radius=r_start, fill=True, color='green'))
+        ax.add_patch(ptch.RegularPolygon((self.s[-1,0], self.s[-1,1]), 8, radius=r_stop, fill=True, color='red'))
         
-        if must_print_markers:
-            # range_x = np.max(self.s[:,0]) - np.min(self.s[:,0])
-            # range_y = np.max(self.s[:,1]) - np.min(self.s[:,1])
-            # d = min(range_x, range_y)
-            r_start = 0.015 * max_range
-            r_stop = 0.01 * max_range
-            ax.add_patch(ptch.Circle((self.s[0,0], self.s[0,1]), radius=r_start, fill=True, color='green'))
-            ax.add_patch(ptch.RegularPolygon((self.s[-1,0], self.s[-1,1]), 8, radius=r_stop, fill=True, color='red'))
-        
-        plt.savefig(f'Results/{self.name}-trajectory.png')
+        plt.savefig(f'{results_dir}/{self.name}-trajectory.png')
         plt.close()
     #:plot_trajectory()
 
