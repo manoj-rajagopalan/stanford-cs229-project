@@ -83,7 +83,7 @@ class NoisyWheel(WheelModel):
         self.Rs = np.array(Rs)
     #:__init__()
 
-    def v(self, φ, φdot_rad_per_sec: float) -> float:
+    def radius_at(self, φ: float) -> float:
         i = 0
         φ_deg = np.mod(np.rad2deg(φ), 360)
         while i < len(self.φs_deg) and self.φs_deg[i] <= φ_deg:
@@ -92,6 +92,11 @@ class NoisyWheel(WheelModel):
         i -= 1
         assert 0 <= i < len(self.φs_deg)
         r = self.Rs[i]
+        return r
+    #:radius_at()
+
+    def v(self, φ: float, φdot_rad_per_sec: float) -> float:
+        r = self.radius_at(φ)
         v = r * φdot_rad_per_sec
         return v
     #:v()
