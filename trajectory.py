@@ -55,8 +55,11 @@ def decimate(traj: Trajectory, aux_data = None) -> (Trajectory, any):
     t = traj.t[range(0, len(traj.t), 10)]
     s = traj.s[range(0, len(traj.s), 10)]
     u = traj.u[range(0, len(traj.u), 10)]
-    t = np.hstack((t, traj.t[-1]))
-    s = np.vstack((s, traj.s[[-1]]))
+    assert len(t) == len(s)
+    if len(t) == len(u):
+        t = np.hstack((t, traj.t[-1]))
+        s = np.vstack((s, traj.s[[-1]]))
+    #:
     assert len(t) == len(u)+1
     assert len(t) == len(s)
 
