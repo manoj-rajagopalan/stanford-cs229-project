@@ -1,11 +1,17 @@
 import numpy as np
+import sys
+
 from matplotlib import pyplot as plt
 
 class WheelModel:
     def v(self):
         assert False, 'Not implemented'
     #:
-#:
+
+    def write_to_file(self, name: str, file=sys.stdout) -> None:
+        assert False, 'Not implemented'
+    #:
+#:WheelModel
 
 class SimpleWheel(WheelModel):
     def __init__(self, radius: float) -> None:
@@ -16,6 +22,13 @@ class SimpleWheel(WheelModel):
     def v(self, φ: float, φdot_rads_per_sec: float) -> float:
         return self.R * φdot_rads_per_sec
     #:
+
+    def write_to_file(self, name: str, file=sys.stdout) -> None:
+        print(f'{name}:', file=file)
+        print(f'    type: simple', file=file)
+        print(f'    radius: self.R', file=file)
+    #:
+
 #:SimpleWheel
 
 class TwoCircleWheel(WheelModel):
@@ -48,6 +61,7 @@ class NoisyWheel(WheelModel):
         # - scale: fraction relative to (nonminal) radius
         # - angular_position (deg)
         # - angular_extent (deg)
+        self.R = radius # for writing out later
         φs_deg = []
         Rs = []
         φ_deg = 0.0
@@ -81,6 +95,23 @@ class NoisyWheel(WheelModel):
         v = r * φdot_rad_per_sec
         return v
     #:v()
+
+    def write_to_file(self, name: str, file=sys.stdout) -> None:
+        print(f'{name}:', file=file)
+        print(f'    type: noisy', file=file)
+        print(f'    radius: {self.R}', file=file)
+        print(f'    perturbations:', file=file)
+        for i in range(len(self.Rs)):
+            φ_deg_next = 360 if i == (len(self.Rs) - 1) else self.φs_deg[i+1]
+            scale = self.Rs[i] / self.R
+            if not (0.995 <= scale <= 1.005):
+                Δφ_deg = φ_deg_next - self.φs_deg[i]
+                print(f'        - angular_position_deg: {self.φs_deg[i]}', file=file)
+                print(f'          angular_extent_deg: {Δφ_deg}', file=file)
+                print(f'          scale: {scale}', file=file)
+            #:if
+        #:for
+    #:write_to_file()
 
 #: class NoisyWheel
 
