@@ -3,13 +3,21 @@
 mkdir -p Results
 
 # Ideal/expected behavior
-python3 golden.py | tee Results/golden.log
+mkdir -p Results/0-Ideal
+python3 ideal.py | tee Results/0-Ideal/ideal.log
 
 # Prove that these robots are far from ideal
-python3 run_test_robots_on_golden_controls.py | tee Results/run_test_robots_on_golden_controls.log
+mkdir -p Results/1-Uncontrolled
+python3 uncontrolled_behavior.py | tee Results/1-Uncontrolled/uncontrolled_behavior.log
 
 # Training data (figure-of-8 trajectories)
-python3 generate_dataset.py | tee Results/generate_dataset.log
+mkdir -p Results/2-Dataset
+python3 generate_dataset.py | tee Results/2-Dataset/generate_dataset.log
 
-# One learning method - SGD
-python3 learn_sgd.py | tee Results/learn_sgd.py
+# First learning method - System Identification with Stochastic Gradient Descent (SGD)
+mkdir -p Results/3-SysId_Controlled
+python3 learn_sgd_controller.py | tee Results/3-SysId_Controlled/learn_sgd_controller.log
+
+# Second learning method - Model-Free control with Fully-Connected Neural Networks (FCNN)
+# mkdir -p Results/4-FCNN_Controlled
+# python3 learn_fcnn_controller.py | tee Results/4-FCNN_Controlled/learn_fcnn_controller.log
