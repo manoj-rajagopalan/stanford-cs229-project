@@ -1,7 +1,7 @@
 # Reference robot which we think we have.
 # Both wheels are 4 cm in diameter.
 
-name: Golden
+name: Ideal
 
 baseline: 0.1
 
