@@ -1,13 +1,21 @@
-from typing import Any
 import numpy as np
+import os
 from tqdm import tqdm
-
+from matplotlib import pyplot as plt
 
 import trajectory
 from robot import DDMR
 from constants import *
+from wheel_model import NoisyWheel
+from run_test_robots_on_golden_controls import run_test_robot_with_golden_controls
 
 Trajectory = trajectory.Trajectory # using namespace
+
+kResultsBasedir = 'Results/SGD'
+
+kRobotYamlFilenames = ['smaller_left_wheel', 'larger_left_wheel',
+                       'smaller_baseline', 'larger_baseline',
+                       'noisy', 'noisier']
 
 class SgdModel:
     def __init__(self, N_φ: int) -> None:
@@ -108,6 +116,7 @@ class SgdMseLoss(SgdMahalanobisLoss):
     #:
 #:MseLoss
 
+
 def learn_system_params_via_SGD(dataset_trajectory: Trajectory,
                                 dataset_v_θdot: np.ndarray, # labels
                                 ref_robot: DDMR, # the one we think this one is, for initial estimates
@@ -206,8 +215,40 @@ def learn_system_params_via_SGD(dataset_trajectory: Trajectory,
         print(f'  Epoch {i_epoch+1} loss = {loss:0.5f}')
     #:for i_epoch
 
-    return *model.results(), epoch_losses
+    R_ls, R_rs, L = model.results()
+    return R_ls, R_rs, L, epoch_losses
 #:learn_system_params_via_SGD()
+
+def make_wheel(ref_wheel_radius: float,
+               Rs: np.ndarray) -> NoisyWheel:
+    perturbations = []
+    φ = 0
+    Δφ_deg = 360 / len(Rs)
+    for i in range(len(Rs)):
+        scale = Rs[i] / ref_wheel_radius
+        perturbations.append({'angular_position_deg': φ,
+                              'angular_extent_deg': Δφ_deg,
+                              'scale': scale})
+        φ += Δφ_deg
+    #:for i
+    wheel = NoisyWheel(ref_wheel_radius, perturbations)
+    return wheel
+#:make_wheel()
+
+def make_robot(name: str,
+               L: float,
+               R_ls: np.ndarray,
+               R_rs: np.ndarray,
+               ref_wheel_radius: float) -> DDMR:
+
+    robot = DDMR()
+    robot.name = name
+    robot.L = L
+    robot.left_wheel = make_wheel(ref_wheel_radius, R_ls)
+    robot.right_wheel = make_wheel(ref_wheel_radius, R_rs)
+    return robot
+#:make_robot()
+
 
 # def compute_κ_sqr(R: float, L: float):
 def compute_κ_sqr(dataset_aux: np.ndarray):
@@ -235,8 +276,7 @@ def compute_κ_sqr(dataset_aux: np.ndarray):
     '''
 #:compute_κ_sqr()
 
-
-if __name__ == "__main__":
+def train_robots():
     N_φ = 30
     
     # Learning rate
@@ -245,18 +285,15 @@ if __name__ == "__main__":
 
     golden_robot = DDMR(config_filename='Robots/golden.yaml')
 
-    robot_yaml_filenames = ['smaller_left_wheel', 'larger_left_wheel',
-                            'smaller_baseline', 'larger_baseline',
-                            'noisy', 'noisier']
+    for robot_descr in kRobotYamlFilenames:
+        robot = DDMR(config_filename=f'Robots/{robot_descr}.yaml')
 
-    for f in robot_yaml_filenames:
-        robot = DDMR(config_filename=f'Robots/{f}.yaml')
         dataset = np.load(f'Results/dataset-{robot.name}.npz')
 
         dataset_trajectory = Trajectory(dataset['t_measured'],
                                         dataset['s_measured'],
                                         dataset['u_measured'],
-                                        name=f'dataset-{f}-measured')
+                                        name=f'dataset-{robot_descr}-measured')
         dataset_aux = np.vstack((dataset['v_measured'],
                                  dataset['θdot_measured'])).T
 
@@ -283,6 +320,9 @@ if __name__ == "__main__":
                                                 N_φ, κ_sqrs[i_loss_type], α,
                                                 is_shuffling_enabled)
                 shuffle_suffix = '-shuffled' if is_shuffling_enabled else ''
+                learnt_robot = make_robot(f'robot-SGD-{robot.name}-{loss_type}{shuffle_suffix}',
+                                          L, R_ls, R_rs, golden_robot.left_wheel.R)
+                learnt_robot.write_to_file(f'{kResultsBasedir}/{learnt_robot.name}.yaml')
                 results_dict[f'R_ls-{loss_type}{shuffle_suffix}'] = R_ls
                 results_dict[f'R_rs-{loss_type}{shuffle_suffix}'] = R_rs
                 results_dict[f'L-{loss_type}{shuffle_suffix}'] = L
@@ -291,6 +331,65 @@ if __name__ == "__main__":
 
         #:for i_loss_type
 
-        np.savez(f'Results/sgd-{robot.name}.npz', **results_dict)
+        np.savez(f'{kResultsBasedir}/sgd-{robot.name}.npz', **results_dict)
     #:for f
+
+#:train_robots()
+
+
+def plot_convergence_profiles() -> None:
+    for robot_descr in kRobotYamlFilenames:
+        robot = DDMR(config_filename=f'Robots/{robot_descr}.yaml')
+        results = np.load(f'{kResultsBasedir}/sgd-{robot.name}.npz')
+        _, ax = plt.subplots()
+        epoch_losses_mah = results['epoch_losses-mahalanobis']
+        epoch_losses_mah_shuf = results['epoch_losses-mahalanobis-shuffled']
+        epoch_losses_mse = results['epoch_losses-mahalanobis']
+        epoch_losses_mse_shuf = results['epoch_losses-mahalanobis-shuffled']
+        assert len(epoch_losses_mah) == len(epoch_losses_mah_shuf)
+        assert len(epoch_losses_mse) == len(epoch_losses_mse_shuf)
+        assert len(epoch_losses_mse) == len(epoch_losses_mah)
+        epoch_nums = np.arange(len(epoch_losses_mah)) + 1
+        assert len(epoch_losses_mse) == len(epoch_losses_mse_shuf)
+        ax.plot(epoch_nums, epoch_losses_mah, 'm-')
+        ax.plot(epoch_nums, epoch_losses_mah_shuf, 'r-')
+        ax.plot(epoch_nums, epoch_losses_mse, 'c-')
+        ax.plot(epoch_nums, epoch_losses_mse_shuf, 'g-')
+        ax.set_xlabel('Epoch')
+        ax.set_ylabel('Loss')
+        ax.set_yscale('log')
+        ax.set_title(f'SGD convergence: robot {robot.name}')
+        plt.savefig(f'{kResultsBasedir}/epoch_losses-{robot.name}.png')
+        plt.close()
+    #:for robot
+#:plot_convergence_profiles()
+
+
+def run_learnt_robots_on_golden_trajectories():
+    npz = np.load('Results/golden_trajectories.npz')
+    traj_keys = ['straight', 'spin', 'circle_ccw', 'circle_cw', 'figureOf8', 'tri_wave_phi']
+    golden_trajectories = []
+    for traj_key in traj_keys:
+        traj_name = traj_key + '-Golden'
+        golden_trajectory = Trajectory(npz['t_'+traj_name],
+                                       npz['s_'+traj_name],
+                                       npz['u_'+traj_name],
+                                       name=traj_name)
+        golden_trajectories.append(golden_trajectory)
+    #:
+    tests_robots = [DDMR(f'Robots/{f}.yaml') for f in kRobotYamlFilenames]
+    learnt_robots = [DDMR(f'{kResultsBasedir}/robot-SGD-{robot.name}-mahalanobis-shuffled.yaml') for robot in tests_robots]
+    for learnt_robot in learnt_robots:
+        run_test_robot_with_golden_controls(learnt_robot,
+                                            golden_trajectories,
+                                            output_npz_filename=f'{kResultsBasedir}/robot-SGD-{learnt_robot.name}-mse-shuffled-on-golden-trajectories.npz')
+    #:
+#:run_learnt_robots_on_golden_trajectories()
+
+
+if __name__ == "__main__":
+    # os.makedirs(kResultsBasedir, exist_ok=True)
+    # train_robots()
+    # plot_convergence_profiles()
+    run_learnt_robots_on_golden_trajectories()
 #:__main__
