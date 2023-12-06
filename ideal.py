@@ -202,7 +202,7 @@ def generate_trajectories(ideal_robot: robot.DDMR) -> dict:
 if __name__ == "__main__":
     os.makedirs(kResultsDir, exist_ok=True)
 
-    ideal_robot = robot.DDMR(config_filename='Robots/golden.yaml')
+    ideal_robot = robot.DDMR(config_filename='Robots/Ideal.yaml')
     ideal_trajectories = generate_trajectories(ideal_robot)
     # Save to .npz file
     # https://stackoverflow.com/a/33878297
