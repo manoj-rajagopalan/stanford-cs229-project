@@ -7,15 +7,34 @@ from trajectory import Trajectory
 from constants import *
 
 class DDMR:
-    def __init__(self, config_filename) -> None:
-        with open(config_filename, 'r') as config_file:
-            cfg = yaml.safe_load(config_file)
-            self.name = cfg['name']
-            self.L = 0.5 * cfg['baseline']
-            self.left_wheel = wheel_factory(cfg['left_wheel'])
-            self.right_wheel = wheel_factory(cfg['right_wheel'])
-        #:
-    #:
+    def __init__(self, config_filename = None) -> None:
+        if config_filename is None:
+            self.name = None
+            self.L = None
+            self.left_wheel = None
+            self.right_wheel = None
+
+        else:
+            with open(config_filename, 'r') as config_file:
+                cfg = yaml.safe_load(config_file)
+                self.name = cfg['name']
+                self.L = 0.5 * cfg['baseline']
+                self.left_wheel = wheel_factory(cfg['left_wheel'])
+                self.right_wheel = wheel_factory(cfg['right_wheel'])
+            #:with
+        #:if
+    #:__init__()
+
+    def write_to_file(self, filename: str) -> None:
+        with open(filename, 'w') as file:
+            print(f'name: {self.name}\n', file=file)
+            print(f'baseline: {2*self.L}\n', file=file)
+            self.left_wheel.write_to_file('left_wheel', file=file)
+            print('', file=file)
+            self.right_wheel.write_to_file('right_wheel', file=file)
+            print('', file=file)
+        #:with
+    #:write_to_file()
 
     def dynamics(self, s, φ_dots):
         x, y, θ, φ_l, φ_r = s # x and y not used
@@ -82,3 +101,8 @@ def simulate(ddmr: DDMR):
     trajectory = Trajectory(sol.t, sol.y.T, φdots, 'robot')
     trajectory.plot()
 #:simulate()
+
+# Tests
+if __name__ == "__main__":
+    noisier_robot = DDMR(config_filename='Robots/noisier.yaml')
+    noisier_robot.write_to_file(filename='Results/test-noisier.yaml')
