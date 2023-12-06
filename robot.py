@@ -61,14 +61,21 @@ class DDMR:
         return Trajectory(sol.t, s, u, name)
     #:execute_control_policy
 
-# class DDMR
+    def execute_trajectory(self,
+                           orig_trajectory: Trajectory,
+                           new_trajectory_name) -> Trajectory:
+        '''
+        Execute the control policy in the original trajectory to
+        generate a new one.
+        '''
+        Δt = orig_trajectory.t[1] - orig_trajectory.t[0]
+        return self.execute_control_policy(orig_trajectory.t, Δt,
+                                           orig_trajectory.u,
+                                           orig_trajectory.s[0],
+                                           new_trajectory_name)
+    #:execute_trajectory()
 
-class Dataset:
-    def __init__(self, X, Y) -> None:
-        self.X = X
-        self.Y = Y
-    #:__init__()
-#:Dataset
+# class DDMR
 
 def dynamics(t, s, time_points, simΔt, φdots, robot, verbose = False):
     time_point_index = max(0, int((t-time_points[0]) / simΔt) - 1)
@@ -84,23 +91,8 @@ def dynamics(t, s, time_points, simΔt, φdots, robot, verbose = False):
     if verbose:
         print(f'Dynamics @ t={t:0.3}, v={np.hypot(s_dot[0], s_dot[1])}, θ_dot={s_dot[2]:0.3}')
     return s_dot
-
 #: dynamics()
 
-def simulate(ddmr: DDMR):
-    t = np.arange(0, 100, kSimΔt)
-    φdots = np.zeros((len(t)-1, 2))
-    φdots[:,0] = 2.0
-    φdots[:,1] = 2.0
-    s0 = np.array([0, 0, 0, 0, 0])
-    sol = scipy.integrate.solve_ivp(dynamics, (0, len(t)*kSimΔt), s0, t_eval=t, max_step=kSimΔt, args=(t, kSimΔt, φdots, ddmr))
-    print(f'IVP solution: {sol.success}')
-    if sol.status != 0:
-        print(f'solve_ivp failed because {sol.message}')
-    #:
-    trajectory = Trajectory(sol.t, sol.y.T, φdots, 'robot')
-    trajectory.plot()
-#:simulate()
 
 # Tests
 if __name__ == "__main__":

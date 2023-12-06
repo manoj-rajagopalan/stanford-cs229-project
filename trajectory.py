@@ -48,8 +48,22 @@ class Trajectory:
         
         plt.savefig(f'{results_dir}/{self.name}-trajectory.png')
         plt.close()
-    #:plot_trajectory()
+    #:plot()
 
+    def save_to_file(self,
+                     npz_filename: str,
+                     aux_info: dict = {}) -> None:
+        '''
+        `dict` must map string names for numpy ndarrays to these arrays.
+        https://stackoverflow.com/a/33878297
+        '''
+        npz_items = {
+            't_'+self.name: self.t,
+            's_'+self.name: self.s,
+            'u_'+self.name: self.u,
+        }
+        np.savez(npz_filename, **npz_items, **aux_info)
+    #:save_to_file
 #:Trajectory
 
 def decimate(traj: Trajectory, aux_data = None) -> (Trajectory, any):

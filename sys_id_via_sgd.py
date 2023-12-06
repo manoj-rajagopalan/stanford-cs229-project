@@ -1,18 +1,18 @@
 import numpy as np
 import os
-from tqdm import tqdm
 from matplotlib import pyplot as plt
 
+import eval
+import ideal
 import trajectory
 from robot import DDMR
 from constants import *
 from wheel_model import NoisyWheel
-from uncontrolled_behavior import run_robot_with_controls  # yeah, not the best place to source from
-import ideal
+from kinematic_control import KinematicallyControlledDDMR
 
 Trajectory = trajectory.Trajectory # using namespace
 
-kResultsDir = 'Results/3-SysId_Controlled'
+kResultsDir = 'Results/3-SysId_via_SGD'
 
 class SgdModel:
     def __init__(self, N_φ: int) -> None:
@@ -234,21 +234,21 @@ def compute_κ_sqr(dataset_aux: np.ndarray):
     '''
 #:compute_κ_sqr()
 
-def train_robots():
+def train(real_robots: list[DDMR]) -> None:
+    print('-------------------')
+    print('Performing training')
+    print('-------------------')
+
+    # Number of angular bins to learn radii per
     N_φ = 30
     
     # Learning rate
-    # α = 0.001 # yields nan very quickly
-    α = 0.0001
+    α = 0.0001 # values of 0.001 and above yield nan very quickly
 
     ideal_robot = DDMR(config_filename='Robots/Ideal.yaml')
 
-    for robot_name in kRobotNames:
-        robot = DDMR(config_filename=f'Robots/{robot_name}.yaml')
-        assert robot_name == robot.name
-
+    for robot in real_robots:
         dataset = np.load(f'Results/2-Dataset/dataset-{robot.name}.npz')
-
         dataset_trajectory = Trajectory(dataset['t_measured'],
                                         dataset['s_measured'],
                                         dataset['u_measured'],
@@ -256,7 +256,7 @@ def train_robots():
         dataset_aux = np.vstack((dataset['v_measured'],
                                  dataset['θdot_measured'])).T
 
-        κ_sqr = compute_κ_sqr(dataset_aux)
+        κ_sqr = compute_κ_sqr(dataset_aux) # scaling parameter for Mahalanobis distance
         print(f'Robot {robot.name} κ_sqr = {κ_sqr}')
         κ_sqrs = [κ_sqr, 1] # Mahalanobis distance metric-tensor parameter
 
@@ -265,11 +265,13 @@ def train_robots():
         # Experiment with Mahalanobis and MSE loss functions
         for i_loss_type in range(2):
             loss_type = 'mahalanobis' if i_loss_type == 0 else 'mse'
-            print('----------------')
-            print(f'Learning {robot.name} with {loss_type} loss')
 
             # Experiment with dataset-shuffling to study effects
             for is_shuffling_enabled in [False, True]:
+                print('.....................................')
+                print(f'Learning {robot.name} with {loss_type} loss and {"" if is_shuffling_enabled else "no"} shuffling')
+                print('.....................................')
+
                 R_ls, R_rs, L, epoch_losses = \
                     learn_system_params_via_SGD(dataset_trajectory, # X
                                                 dataset_aux,  # Y
@@ -294,9 +296,8 @@ def train_robots():
 #:train_robots()
 
 
-def plot_convergence_profiles() -> None:
-    for robot_name in kRobotNames:
-        robot = DDMR(config_filename=f'Robots/{robot_name}.yaml')
+def plot_convergence_profiles(real_robots: list[DDMR]) -> None:
+    for robot in real_robots:
         results = np.load(f'{kResultsDir}/sysId-{robot.name}.npz')
         _, ax = plt.subplots()
         epoch_losses_mah = results['epoch_losses-mahalanobis']
@@ -322,22 +323,44 @@ def plot_convergence_profiles() -> None:
 #:plot_convergence_profiles()
 
 
-def run_learnt_robots_on_ideal_trajectories():
+def evaluate_uncontrolled(real_robots: list[DDMR]) -> None:
+    '''
+    If system-identification was performed correctly, the learnt
+    robots must produce the same trajectory as their target,
+    provided the same controls.
+    Here, the controls are those provided to the ideal robot.
+    '''
     ideal_trajectories = ideal.load_trajectories()
-    real_robots = [DDMR(f'Robots/{f}.yaml') for f in kRobotNames]
     learnt_robots = [DDMR(f'{kResultsDir}/robot-sysId-{robot.name}-mahalanobis-shuffled.yaml')
                      for robot in real_robots]
-    for learnt_robot in learnt_robots:
-        run_robot_with_controls(learnt_robot,
-                                ideal_trajectories,
-                                output_npz_filename=f'{kResultsDir}/{learnt_robot.name}-on-ideal-trajectories.npz')
-    #:
-#:run_learnt_robots_on_ideal_trajectories()
+    eval.run_robots_with_controls(learnt_robots,
+                                  ideal_trajectories,
+                                  kResultsDir)
+#:evaluate_uncontrolled()
 
+
+def evaluate_controlled(real_robots: list[DDMR]) -> None:
+    '''
+    Apply the kinematic controller to all learnt robots
+    and hope that we match the ideal robot.
+    '''
+    ideal_robot = DDMR('Robots/Ideal.yaml')
+    controlled_robots = [KinematicallyControlledDDMR(
+                            config_filename=f'{kResultsDir}/robot-sysId-{robot.name}-mahalanobis-shuffled.yaml',
+                            ideal_robot=ideal_robot,
+                            verbose=False)
+                         for robot in real_robots]
+    ideal_trajectories = ideal.load_trajectories()
+    eval.run_robots_with_controls(controlled_robots,
+                                  ideal_trajectories,
+                                  kResultsDir)
+#:evaluate_controlled()
 
 if __name__ == "__main__":
     os.makedirs(kResultsDir, exist_ok=True)
-    train_robots()
-    plot_convergence_profiles()
-    run_learnt_robots_on_ideal_trajectories()
+    real_robots = [DDMR(f'Robots/{name}.yaml') for name in kRobotNames]
+    train(real_robots)
+    plot_convergence_profiles(real_robots)
+    evaluate_uncontrolled(real_robots)
+    evaluate_controlled(real_robots)
 #:__main__
