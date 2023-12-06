@@ -3,16 +3,16 @@ import numpy as np
 import robot
 import trajectory
 from constants import *
-from learn import learn_system_params_via_SGD
 
 Trajectory = trajectory.Trajectory # using namespace
 
+kResultsDir = 'Results/2-Dataset'
 
-def generate_dataset_trajectory(test_robot: robot.DDMR) -> (Trajectory, np.ndarray):
+def generate_dataset_trajectory(real_robot: robot.DDMR) -> (Trajectory, np.ndarray):
     '''
     Get the robot to perform `num_loop` figures-of-8 with various radii.
     '''
-    print(f'Generating dataset for {test_robot.name} robot')
+    print(f'\nGenerating dataset for {real_robot.name} robot')
     rng = np.random.default_rng()
     
     # Pre-generate samples of φdot_l and φdot_R to create figure-of-8 loops with
@@ -40,17 +40,18 @@ def generate_dataset_trajectory(test_robot: robot.DDMR) -> (Trajectory, np.ndarr
                 counter += 1
                 tf = t0 + kSimΔt
                 t = np.array([t0, tf])
-                incremental_traj = test_robot.execute_control_policy(t, kSimΔt, φdots[np.newaxis,:], s0)
+                incremental_traj = \
+                    real_robot.execute_control_policy(t, kSimΔt, φdots[np.newaxis,:], s0)
                 t0 = incremental_traj.t[-1]
                 s0 = incremental_traj.s[-1]
 
                 # Aux info at state: v and θdot
                 _, _, _, φ_l, φ_r = s0
                 φdot_l, φdot_r = φdots
-                v_l = test_robot.left_wheel.v(φ_l, φdot_l)
-                v_r = test_robot.right_wheel.v(φ_r, φdot_r)
+                v_l = real_robot.left_wheel.v(φ_l, φdot_l)
+                v_r = real_robot.right_wheel.v(φ_r, φdot_r)
                 v = 0.5 * (v_r + v_l)
-                θdot = 0.5 / test_robot.L * (v_r - v_l)
+                θdot = 0.5 / real_robot.L * (v_r - v_l)
 
                 traj_u.append(φdots.copy())
                 traj_t.append(t0.copy())
@@ -87,25 +88,25 @@ def generate_dataset_trajectory(test_robot: robot.DDMR) -> (Trajectory, np.ndarr
     assert traj_u.shape == (len(traj_t)-1, 2)
     assert aux_v_θdot.shape == (len(traj_u), 2)
 
-    dataset_trajectory = Trajectory(traj_t, traj_s, traj_u, name=f'dataset-{test_robot.name}')
-    dataset_trajectory.plot()
+    dataset_trajectory = Trajectory(traj_t, traj_s, traj_u, name=f'dataset-{real_robot.name}')
+    dataset_trajectory.plot(kResultsDir)
 
     # Decimate and add noise
     dataset_trajectory_decimated, _ = trajectory.decimate(dataset_trajectory)
-    dataset_trajectory_decimated.plot()
+    dataset_trajectory_decimated.plot(kResultsDir)
     
     dataset_trajectory_measured = trajectory.add_noise(dataset_trajectory_decimated,
                                                        xy_std_dev=0.01,
                                                        θ_deg_std_dev=1,
                                                        φ_lr_deg_std_dev=1,
                                                        φdot_lr_deg_per_sec_std_dev=1)
-    dataset_trajectory_measured.plot()
+    dataset_trajectory_measured.plot(kResultsDir)
     aux_v_θdot_decimated = aux_v_θdot[range(0, len(aux_v_θdot), 10)]
     aux_v_θdot_measured = aux_v_θdot_decimated \
                         + np.vstack((np.random.normal(loc=0, scale=0.01, size=len(aux_v_θdot_decimated)),
                                      np.random.normal(loc=0, scale=np.deg2rad(1), size=len(aux_v_θdot_decimated)))).T
     
-    np.savez(f'Results/dataset-{test_robot.name}.npz',
+    np.savez(f'{kResultsDir}/dataset-{real_robot.name}.npz',
              t=traj_t,
              s=traj_s,
              u=traj_u,
@@ -122,7 +123,7 @@ def generate_dataset_trajectory(test_robot: robot.DDMR) -> (Trajectory, np.ndarr
              v_measured=aux_v_θdot_measured[:,0],
              θdot_measured=aux_v_θdot_measured[:,1],
              φdot_samples=φdot_samples)
-    print(f'- Summary for {test_robot.name} robot:')
+    print(f'- Summary of dataset generation for {real_robot.name} robot:')
     print(f'  * Length of decimated trajectory = {len(traj_u)}')
     print(f'  * φdot_l in [{np.min(traj_u[:,0])}, {np.max(traj_u[:,0])}]')
     print(f'  * φdot_r in [{np.min(traj_u[:,1])}, {np.max(traj_u[:,1])}]')
@@ -131,17 +132,8 @@ def generate_dataset_trajectory(test_robot: robot.DDMR) -> (Trajectory, np.ndarr
 
 
 if __name__ == "__main__":
-    smaller_left_wheel_robot = robot.DDMR(config_filename='Robots/smaller_left_wheel.yaml')
-    larger_left_wheel_robot = robot.DDMR(config_filename='Robots/larger_left_wheel.yaml')
-    smaller_baseline_robot = robot.DDMR(config_filename='Robots/smaller_baseline.yaml')
-    larger_baseline_robot = robot.DDMR(config_filename='Robots/larger_baseline.yaml')
-    noisy_robot = robot.DDMR(config_filename='Robots/noisy.yaml')
-    noisier_robot = robot.DDMR(config_filename='Robots/noisier.yaml')
-    test_robots = [smaller_left_wheel_robot, larger_left_wheel_robot,
-                   smaller_baseline_robot, larger_baseline_robot,
-                   noisy_robot, noisier_robot]
-
-    for test_robot in test_robots:
-        dataset_trajectory = generate_dataset_trajectory(test_robot)
+    real_robots = [robot.DDMR(f'Robots/{name}.yaml') for name in kRobotNames]
+    for real_robot in real_robots:
+        generate_dataset_trajectory(real_robot)
     #:
 #:__main__
