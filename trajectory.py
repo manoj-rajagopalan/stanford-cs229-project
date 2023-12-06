@@ -23,6 +23,7 @@ class Trajectory:
         ax2.set_ylim(bottom=np.min(self.s[:,2]), top=np.max(self.s[:,2]))
         ax2.set_ylabel('$\\theta$ (deg)')
         plt.savefig(f'{results_dir}/{self.name}-state.png')
+        plt.close()
 
         _, ax = plt.subplots()
         xs, ys = self.s[:,0], self.s[:,1]
