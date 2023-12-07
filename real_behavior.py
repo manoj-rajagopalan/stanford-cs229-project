@@ -6,7 +6,7 @@ import ideal
 import eval
 from constants import *
 
-kResultsDir = 'Results/1-Uncontrolled'
+kResultsDir = 'Results/1-Real'
 
 if __name__ == "__main__":
     os.makedirs(kResultsDir, exist_ok=True)
