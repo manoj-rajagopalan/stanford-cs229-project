@@ -109,12 +109,10 @@ class NoisyWheel(WheelModel):
         for i in range(len(self.Rs)):
             φ_deg_next = 360 if i == (len(self.Rs) - 1) else self.φs_deg[i+1]
             scale = self.Rs[i] / self.R
-            if not (0.995 <= scale <= 1.005):
-                Δφ_deg = φ_deg_next - self.φs_deg[i]
-                print(f'        - angular_position_deg: {self.φs_deg[i]}', file=file)
-                print(f'          angular_extent_deg: {Δφ_deg}', file=file)
-                print(f'          scale: {scale}', file=file)
-            #:if
+            Δφ_deg = φ_deg_next - self.φs_deg[i]
+            print(f'        - angular_position_deg: {self.φs_deg[i]}', file=file)
+            print(f'          angular_extent_deg: {Δφ_deg}', file=file)
+            print(f'          scale: {scale}', file=file)
         #:for
     #:write_to_file()
 
