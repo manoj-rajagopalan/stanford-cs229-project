@@ -31,8 +31,9 @@ def generate_ideal_trajectory_straight_line(ideal_robot: robot.DDMR) -> Trajecto
 
     # Simulate trajectory
     s0 = np.array([0,0,0,0,0])
-    trajectory = ideal_robot.execute_control_policy(t, kSimΔt, u, s0,
-                                                    name=f'straight-{ideal_robot.name}')
+    trajectory = \
+        ideal_robot.execute_wheel_control_policy(t, kSimΔt, u, s0,
+                                                 name=f'straight-{ideal_robot.name}')
     return trajectory
 #:generate_ideal_trajectory_straight_line()
 
@@ -62,8 +63,9 @@ def generate_ideal_trajectory_spin(ideal_robot: robot.DDMR) -> Trajectory:
 
     # Simulate trajectory
     s0 = np.array([0,0,0,0,0])
-    trajectory = ideal_robot.execute_control_policy(t, kSimΔt, u, s0,
-                                                    name=f'spin-{ideal_robot.name}')
+    trajectory = \
+        ideal_robot.execute_wheel_control_policy(t, kSimΔt, u, s0,
+                                                 name=f'spin-{ideal_robot.name}')
     return trajectory
 #:generate_ideal_trajectory_rotate_in_place()
 
@@ -80,7 +82,8 @@ def generate_ideal_trajectory_circle_common(t_final: float,
     t[-1] = min(t_final, t[-1]) # placate IVP solver
     φdots = np.repeat(np.array([[φ_l, φ_r]]), len(t)-1, axis=0)
     s0 = np.array([0,0,0,0,0])
-    trajectory = ideal_robot.execute_control_policy(t, kSimΔt, φdots, s0, name='')
+    trajectory = \
+        ideal_robot.execute_wheel_control_policy(t, kSimΔt, φdots, s0, name='')
     return trajectory
 #:generate_ideal_trajectory_circle_common()
 
@@ -118,7 +121,8 @@ def generate_ideal_trajectory_figureOf8(ideal_robot: robot.DDMR,
     assert s.shape[0] == len(t)
     u = np.vstack((traj_ccw.u, traj_cw.u))
     assert u.shape[0] == s.shape[0]-1
-    trajectory = Trajectory(t, s, u, name=f'figureOf8-{ideal_robot.name}')
+    trajectory = Trajectory(t, s, u, Trajectory.Type.WHEEL_DYNAMICS,
+                            name=f'figureOf8-{ideal_robot.name}')
     return trajectory
 #:generate_ideal_trajectory_figureOf8()
 
@@ -145,7 +149,7 @@ def generate_ideal_trajectory_tri_wave_φ(ideal_robot: robot.DDMR) -> Trajectory
     u[4*num_8th_cycle_samples:, 0] = u[:4*num_8th_cycle_samples, 0]
 
     s0 = np.array([0,0,0,0,0])
-    trajectory = ideal_robot.execute_control_policy(t, kSimΔt, u, s0,
+    trajectory = ideal_robot.execute_wheel_control_policy(t, kSimΔt, u, s0,
                                                      name=f'tri_wave_phi-{ideal_robot.name}')
     return trajectory
 #:generate_ideal_trajectory_tri_wave_φ()
@@ -200,14 +204,16 @@ def generate_trajectories(ideal_robot: robot.DDMR) -> dict:
 #: generate_trajectories()
 
 def load_trajectories():
-    npz = np.load(f'{kResultsDir}/ideal_trajectories.npz')
+    npz = np.load(f'{kResultsDir}/ideal_trajectories.npz',
+                  allow_pickle=True)
     ideal_trajectories = []
     for traj_key in kIdealTrajectoryKeys:
         traj_name = traj_key + '-Ideal'
         ideal_trajectory = Trajectory(npz['t_'+traj_name],
                                       npz['s_'+traj_name],
                                       npz['u_'+traj_name],
-                                      name=traj_name)
+                                      Trajectory.Type(npz['u_type_'+traj_name]),
+                                      traj_name)
         ideal_trajectories.append(ideal_trajectory)
     #:
     return ideal_trajectories
@@ -225,6 +231,7 @@ if __name__ == "__main__":
         npz_items['t_' + traj.name] = traj.t
         npz_items['s_' + traj.name] = traj.s
         npz_items['u_' + traj.name] = traj.u
+        npz_items['u_type_' + traj.name] = int(traj.u_type)
     #:
     np.savez(f'{kResultsDir}/ideal_trajectories.npz', **npz_items)
 #:__main__()

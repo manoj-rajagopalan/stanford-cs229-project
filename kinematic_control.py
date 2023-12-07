@@ -1,11 +1,7 @@
 import numpy as np
-import scipy.integrate
 
-import ideal
-import eval
 from constants import *
 from robot import DDMR
-from trajectory import Trajectory
 
 class KinematicController:
     def __init__(self, ideal_robot: DDMR, actual_robot: DDMR) -> None:
@@ -30,13 +26,13 @@ class KinematicController:
         v_l_ideal, v_r_ideal = R_ideal * φdot_l_ideal, R_ideal * φdot_r_ideal
         v_desired = (1/2) * (v_r_ideal + v_l_ideal)
         L_ideal = self.ideal_robot.L
-        θdot_desired = (1/(2*L_ideal)) * (v_r_ideal - v_l_ideal)
+        ω_desired = (1/(2*L_ideal)) * (v_r_ideal - v_l_ideal)
 
         # Now compute what actual φdot_l and φdot_r will provide these.
-        _, _, θ, φ_l, φ_r = s # x and y not used
+        _, _, _, φ_l, φ_r = s # x, y, θ not used
         L_actual = self.actual_robot.L
-        v_r_actual = v_desired + (L_actual * θdot_desired)
-        v_l_actual = v_desired - (L_actual * θdot_desired)
+        v_r_actual = v_desired + (L_actual * ω_desired)
+        v_l_actual = v_desired - (L_actual * ω_desired)
         R_l_actual = self.actual_robot.left_wheel.radius_at(φ_l)
         R_r_actual = self.actual_robot.right_wheel.radius_at(φ_r)
         φdot_l_actual = v_l_actual / R_l_actual
@@ -82,16 +78,16 @@ class KinematicallyControlledDDMR(DDMR):
         self.verbose = False
     #:
 
-    def dynamics(self, s, φdots_ideal):
+    def wheel_dynamics(self, s, φdots_ideal):
         φdots_actual = self.controller.translate(φdots_ideal, s)
-        sdot_ideal = self.controller.ideal_robot.dynamics(s, φdots_ideal)
-        sdot_actual = super().dynamics(s, φdots_actual)
+        sdot_ideal = self.controller.ideal_robot.wheel_dynamics(s, φdots_ideal)
+        sdot_actual = super().wheel_dynamics(s, φdots_actual)
         if self.verbose:
             x, y, θ, φ_l, φ_r = s
             print(f'Dynamics @ ({x:0.3},{y:0.3};{θ:0.3}) | ({φ_l:0.3},{φ_r:0.3}):')
             print(f'    φdots = {φdots_actual[0]:0.5}, {φdots_actual[1]:0.5} vs {φdots_ideal[0]:0.5}, {φdots_ideal[1]:0.5}')
             print(f'    v = {np.hypot(sdot_actual[0], sdot_actual[1]):0.5} vs {np.hypot(sdot_ideal[0], sdot_ideal[1]):0.5}')
-            print(f'    θ_dot = {sdot_actual[2]:0.5} vs {sdot_ideal[2]:0.5}')
+            print(f'    ω = {sdot_actual[2]:0.5} vs {sdot_ideal[2]:0.5}')
         #:if verbose
         return sdot_actual
     #:

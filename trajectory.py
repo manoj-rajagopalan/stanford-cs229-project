@@ -1,12 +1,24 @@
 import numpy as np
+from enum import IntEnum
 from matplotlib import pyplot as plt
 from matplotlib import patches as ptch
 
 class Trajectory:
-    def __init__(self, t, s, u, name) -> None:
+    class Type(IntEnum):
+        WHEEL_DYNAMICS = 0
+        BODY_DYNAMICS = 1
+    #:
+
+    def __init__(self,
+                 t: np.ndarray,
+                 s: np.ndarray,
+                 u: np.ndarray,
+                 u_type: Type,
+                 name: str) -> None:
         self.t = t
         self.s = s
         self.u = u
+        self.u_type = u_type
         self.name = name
     #:
 
@@ -61,6 +73,7 @@ class Trajectory:
             't_'+self.name: self.t,
             's_'+self.name: self.s,
             'u_'+self.name: self.u,
+            'u_type_'+self.name: int(self.u_type) # work around some problem with pickling
         }
         np.savez(npz_filename, **npz_items, **aux_info)
     #:save_to_file
@@ -70,6 +83,7 @@ def decimate(traj: Trajectory, aux_data = None) -> (Trajectory, any):
     t = traj.t[range(0, len(traj.t), 10)]
     s = traj.s[range(0, len(traj.s), 10)]
     u = traj.u[range(0, len(traj.u), 10)]
+    u_type = traj.u_type
     assert len(t) == len(s)
     if len(t) == len(u):
         t = np.hstack((t, traj.t[-1]))
@@ -84,7 +98,7 @@ def decimate(traj: Trajectory, aux_data = None) -> (Trajectory, any):
         aux_data_decimated = aux_data[range(0, len(aux_data), 10)]
         assert len(aux_data_decimated) == len(u)
     #:if
-    return Trajectory(t, s, u, name=f'{traj.name}-decimated'), aux_data_decimated
+    return Trajectory(t, s, u, u_type, name=f'{traj.name}-decimated'), aux_data_decimated
 #:decimate()
 
 def add_noise(traj: Trajectory,
@@ -110,8 +124,9 @@ def add_noise(traj: Trajectory,
     # s = np.transpose(np.vstack((x, y, θ, φ_l, φ_r)))
     s = np.vstack((x, y, θ, φ_l, φ_r)).T
     u = np.vstack((φdot_l, φdot_r)).T
+    u_type = traj.u_type
     print(f'add_noise:')
     print(f'  |Δs|={np.linalg.norm(s-traj.s)}')
     print(f'  |Δu|={np.linalg.norm(u-traj.u)}')
-    return Trajectory(t,s,u, traj.name+'-with-noise')
+    return Trajectory(t,s,u,u_type, traj.name+'-with-noise')
 #:add_noise()

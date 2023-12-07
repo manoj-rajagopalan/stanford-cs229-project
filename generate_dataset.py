@@ -28,7 +28,7 @@ def generate_dataset_trajectory(real_robot: robot.DDMR) -> (Trajectory, np.ndarr
     traj_t = [t0]
     traj_s = [s0]
     traj_u = []
-    aux_v_θdot = []
+    traj_aux_v_ω = []
 
     for iloop in range(len(φdot_samples)):
         φdots = φdot_samples[iloop]
@@ -41,7 +41,7 @@ def generate_dataset_trajectory(real_robot: robot.DDMR) -> (Trajectory, np.ndarr
                 tf = t0 + kSimΔt
                 t = np.array([t0, tf])
                 incremental_traj = \
-                    real_robot.execute_control_policy(t, kSimΔt, φdots[np.newaxis,:], s0)
+                    real_robot.execute_wheel_control_policy(t, kSimΔt, φdots[np.newaxis,:], s0)
                 t0 = incremental_traj.t[-1]
                 s0 = incremental_traj.s[-1]
 
@@ -51,12 +51,12 @@ def generate_dataset_trajectory(real_robot: robot.DDMR) -> (Trajectory, np.ndarr
                 v_l = real_robot.left_wheel.v(φ_l, φdot_l)
                 v_r = real_robot.right_wheel.v(φ_r, φdot_r)
                 v = 0.5 * (v_r + v_l)
-                θdot = 0.5 / real_robot.L * (v_r - v_l)
+                ω = 0.5 / real_robot.L * (v_r - v_l)
 
                 traj_u.append(φdots.copy())
                 traj_t.append(t0.copy())
                 traj_s.append(s0.copy())
-                aux_v_θdot.append([v, θdot])
+                traj_aux_v_ω.append([v, ω])
 
             #:while s0[2] in [0, 2π)
 
@@ -71,7 +71,7 @@ def generate_dataset_trajectory(real_robot: robot.DDMR) -> (Trajectory, np.ndarr
             del traj_u[-1]
             del traj_t[-1]
             del traj_s[-1]
-            del aux_v_θdot[-1]
+            del traj_aux_v_ω[-1]
             t0 = traj_t[-1]
             s0 = traj_s[-1]
 
@@ -81,53 +81,72 @@ def generate_dataset_trajectory(real_robot: robot.DDMR) -> (Trajectory, np.ndarr
     traj_t = np.array(traj_t)
     traj_s = np.array(traj_s)
     traj_u = np.array(traj_u)
-    aux_v_θdot = np.array(aux_v_θdot)
+    traj_aux_v_ω = np.array(traj_aux_v_ω)
 
     assert traj_s.shape == (len(traj_t), 5)
     traj_s[:,2:] = np.mod(traj_s[:,2:], 2*np.pi) # make θ, φ_l, φ_r canonical
     assert traj_u.shape == (len(traj_t)-1, 2)
-    assert aux_v_θdot.shape == (len(traj_u), 2)
+    assert traj_aux_v_ω.shape == (len(traj_u), 2)
 
-    dataset_trajectory = Trajectory(traj_t, traj_s, traj_u, name=f'dataset-{real_robot.name}')
+    dataset_trajectory = Trajectory(traj_t, traj_s, traj_u,
+                                    Trajectory.Type.WHEEL_DYNAMICS,
+                                    name=f'dataset-{real_robot.name}')
     dataset_trajectory.plot(kResultsDir)
 
     # Decimate and add noise
-    dataset_trajectory_decimated, _ = trajectory.decimate(dataset_trajectory)
-    dataset_trajectory_decimated.plot(kResultsDir)
+    dataset_trajectory_measurement_ground_truth, _ = \
+        trajectory.decimate(dataset_trajectory)
+    dataset_trajectory_measurement_ground_truth.plot(kResultsDir)
     
-    dataset_trajectory_measured = trajectory.add_noise(dataset_trajectory_decimated,
+    dataset_trajectory_measured = trajectory.add_noise(dataset_trajectory_measurement_ground_truth,
                                                        xy_std_dev=0.01,
                                                        θ_deg_std_dev=1,
                                                        φ_lr_deg_std_dev=1,
                                                        φdot_lr_deg_per_sec_std_dev=1)
     dataset_trajectory_measured.plot(kResultsDir)
-    aux_v_θdot_decimated = aux_v_θdot[range(0, len(aux_v_θdot), 10)]
-    aux_v_θdot_measured = aux_v_θdot_decimated \
-                        + np.vstack((np.random.normal(loc=0, scale=0.01, size=len(aux_v_θdot_decimated)),
-                                     np.random.normal(loc=0, scale=np.deg2rad(1), size=len(aux_v_θdot_decimated)))).T
+
+    # Massage trajectory names to be more semantic.
+    dataset_trajectory_measurement_ground_truth.name = \
+    dataset_trajectory_measurement_ground_truth.name.replace('decimated',
+                                                             'measurement_ground_truth')
+    dataset_trajectory_measured.name = \
+    dataset_trajectory_measured.name.replace('decimated-with-noise',
+                                             'measured')
+
+    aux_v_ω_measurement_ground_truth = traj_aux_v_ω[range(0, len(traj_aux_v_ω), 10)]
+    aux_v_ω_measured = aux_v_ω_measurement_ground_truth \
+                        + np.vstack((np.random.normal(loc=0, scale=0.01, size=len(aux_v_ω_measurement_ground_truth)),
+                                     np.random.normal(loc=0, scale=np.deg2rad(1), size=len(aux_v_ω_measurement_ground_truth)))).T
     
     np.savez(f'{kResultsDir}/dataset-{real_robot.name}.npz',
-             t=traj_t,
-             s=traj_s,
-             u=traj_u,
-             v=aux_v_θdot[:,0],
-             θdot=aux_v_θdot[:,1],
-             t_decimated=dataset_trajectory_decimated.t,
-             s_decimated=dataset_trajectory_decimated.s,
-             u_decimated=dataset_trajectory_decimated.u,
-             v_decimated=aux_v_θdot_decimated[:,0],
-             θdot_decimated=aux_v_θdot_decimated[:,1],
+             t=dataset_trajectory.t,
+             s=dataset_trajectory.s,
+             u=dataset_trajectory.u,
+             u_type=int(dataset_trajectory.u_type),
+             v=traj_aux_v_ω[:,0],
+             ω=traj_aux_v_ω[:,1],
+
+             t_measurement_ground_truth=dataset_trajectory_measurement_ground_truth.t,
+             s_measurement_ground_truth=dataset_trajectory_measurement_ground_truth.s,
+             u_measurement_ground_truth=dataset_trajectory_measurement_ground_truth.u,
+             u_type_measurement_ground_truth=int(dataset_trajectory_measurement_ground_truth.u_type),
+             v_measurement_ground_truth=aux_v_ω_measurement_ground_truth[:,0],
+             ω_measurement_ground_truth=aux_v_ω_measurement_ground_truth[:,1],
+
              t_measured=dataset_trajectory_measured.t,
              s_measured=dataset_trajectory_measured.s,
              u_measured=dataset_trajectory_measured.u,
-             v_measured=aux_v_θdot_measured[:,0],
-             θdot_measured=aux_v_θdot_measured[:,1],
+             u_type_measured=int(dataset_trajectory_measured.u_type),
+             v_measured=aux_v_ω_measured[:,0],
+             ω_measured=aux_v_ω_measured[:,1],
+
              φdot_samples=φdot_samples)
+
     print(f'- Summary of dataset generation for {real_robot.name} robot:')
     print(f'  * Length of decimated trajectory = {len(traj_u)}')
     print(f'  * φdot_l in [{np.min(traj_u[:,0])}, {np.max(traj_u[:,0])}]')
     print(f'  * φdot_r in [{np.min(traj_u[:,1])}, {np.max(traj_u[:,1])}]')
-    return dataset_trajectory, aux_v_θdot
+    return dataset_trajectory, traj_aux_v_ω
 #:generate_dataset_trajectory()
 
 

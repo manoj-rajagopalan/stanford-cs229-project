@@ -54,8 +54,8 @@ class SgdModel:
         one_by_L = self.params[-1]
         φdot_l, φdot_r = np.hsplit(X[:, 5:], 2)
         v_pred = 0.5 * (R_r * φdot_r + R_l * φdot_l)
-        θdot_pred = 0.5 * (R_r * φdot_r - R_l * φdot_l) * one_by_L
-        Y_pred = np.hstack((v_pred, θdot_pred))
+        ω_pred = 0.5 * (R_r * φdot_r - R_l * φdot_l) * one_by_L
+        Y_pred = np.hstack((v_pred, ω_pred))
         self.n_l, self.n_r = np.squeeze(self.n_l), np.squeeze(self.n_r) # convert to vector from 1D matrix
         return Y_pred
     #:predict()
@@ -68,7 +68,7 @@ class SgdModel:
         '''
         Y_diff = Y_pred - Y
         '''
-        v_diff, θdot_diff = Y_diff[:,0], Y_diff[:,1]
+        v_diff, ω_diff = Y_diff[:,0], Y_diff[:,1]
         φdot_l, φdot_r = X[:,-2], X[:,-1]
         one_by_L = self.params[-1]
 
@@ -77,10 +77,10 @@ class SgdModel:
             n_l, n_r = self.n_l[i], self.n_r[i]
             R_l, R_r = self.params[n_l], self.params[n_r + self.N_φ]
             self.grad_params[n_l] += κ_sqr * v_diff[i] * φdot_l[i]/2 \
-                                   - θdot_diff[i] * φdot_l[i]/2 * one_by_L
+                                   - ω_diff[i] * φdot_l[i]/2 * one_by_L
             self.grad_params[n_r + self.N_φ] += κ_sqr * v_diff[i] * φdot_r[i]/2 \
-                                              + θdot_diff[i] * φdot_r[i]/2 * one_by_L
-            self.grad_params[-1] += θdot_diff[i] * (R_r * φdot_r[i] - R_l * φdot_l[i])/2
+                                              + ω_diff[i] * φdot_r[i]/2 * one_by_L
+            self.grad_params[-1] += ω_diff[i] * (R_r * φdot_r[i] - R_l * φdot_l[i])/2
         #:for i
         self.grad_params /= len(X)
 
@@ -116,7 +116,7 @@ class SgdMseLoss(SgdMahalanobisLoss):
 
 
 def learn_system_params_via_SGD(dataset_trajectory: Trajectory,
-                                dataset_v_θdot: np.ndarray, # labels
+                                dataset_aux_v_ω: np.ndarray, # labels
                                 ref_robot: DDMR, # the one we think this one is, for initial estimates
                                 N_φ: int, # number of angular bins per wheel
                                 κ_sqr: float,
@@ -141,7 +141,7 @@ def learn_system_params_via_SGD(dataset_trajectory: Trajectory,
     epoch_losses = np.zeros(num_epochs)
 
     X = np.hstack((dataset_trajectory.s[1:], dataset_trajectory.u))
-    Y = dataset_v_θdot
+    Y = dataset_aux_v_ω
     
     if is_shuffling_enabled:
         shuffle = \
@@ -253,9 +253,10 @@ def train(real_robots: list[DDMR]) -> None:
         dataset_trajectory = Trajectory(dataset['t_measured'],
                                         dataset['s_measured'],
                                         dataset['u_measured'],
+                                        Trajectory.Type(dataset['u_type_measured']),
                                         name=f'dataset-{robot.name}-measured')
         dataset_aux = np.vstack((dataset['v_measured'],
-                                 dataset['θdot_measured'])).T
+                                 dataset['ω_measured'])).T
 
         κ_sqr = compute_κ_sqr(dataset_aux) # scaling parameter for Mahalanobis distance
         print(f'Robot {robot.name} κ_sqr = {κ_sqr}')
