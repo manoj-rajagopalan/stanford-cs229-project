@@ -121,24 +121,21 @@ def generate_dataset_trajectory(real_robot: robot.DDMR) -> (Trajectory, np.ndarr
     np.savez(f'{kResultsDir}/dataset-{real_robot.name}.npz',
              t=dataset_trajectory.t,
              s=dataset_trajectory.s,
-             u=dataset_trajectory.u,
              u_type=int(dataset_trajectory.u_type),
-             v=traj_aux_v_ω[:,0],
-             ω=traj_aux_v_ω[:,1],
+             φdots_lr=dataset_trajectory.u,
+             v_ω=traj_aux_v_ω,
 
              t_measurement_ground_truth=dataset_trajectory_measurement_ground_truth.t,
              s_measurement_ground_truth=dataset_trajectory_measurement_ground_truth.s,
-             u_measurement_ground_truth=dataset_trajectory_measurement_ground_truth.u,
              u_type_measurement_ground_truth=int(dataset_trajectory_measurement_ground_truth.u_type),
-             v_measurement_ground_truth=aux_v_ω_measurement_ground_truth[:,0],
-             ω_measurement_ground_truth=aux_v_ω_measurement_ground_truth[:,1],
+             φdots_lr_measurement_ground_truth=dataset_trajectory_measurement_ground_truth.u,
+             v_ω_measurement_ground_truth=aux_v_ω_measurement_ground_truth,
 
              t_measured=dataset_trajectory_measured.t,
              s_measured=dataset_trajectory_measured.s,
-             u_measured=dataset_trajectory_measured.u,
              u_type_measured=int(dataset_trajectory_measured.u_type),
-             v_measured=aux_v_ω_measured[:,0],
-             ω_measured=aux_v_ω_measured[:,1],
+             φdots_lr_measured=dataset_trajectory_measured.u,
+             v_ω_measured=aux_v_ω_measured,
 
              φdot_samples=φdot_samples)
 
