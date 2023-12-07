@@ -1,5 +1,6 @@
 import numpy as np
 import os
+import time
 from matplotlib import pyplot as plt
 
 import eval
@@ -272,12 +273,15 @@ def train(real_robots: list[DDMR]) -> None:
                 print(f'Learning {robot.name} with {loss_type} loss and {"" if is_shuffling_enabled else "no"} shuffling')
                 print('.....................................')
 
+                start_time_ns = time.time_ns()
                 R_ls, R_rs, L, epoch_losses = \
                     learn_system_params_via_SGD(dataset_trajectory, # X
                                                 dataset_aux,  # Y
                                                 ideal_robot,
                                                 N_φ, κ_sqrs[i_loss_type], α,
                                                 is_shuffling_enabled)
+                end_time_ns = time.time_ns()
+                print(f'Learnt {robot.name} with {loss_type} loss and{"" if is_shuffling_enabled else " no"} shuffling in {(end_time_ns-start_time_ns)/1.0e9} seconds.')
                 shuffle_suffix = '-shuffled' if is_shuffling_enabled else ''
                 learnt_robot = make_robot(f'robot-sysId-{robot.name}-{loss_type}{shuffle_suffix}',
                                           L, R_ls, R_rs, ideal_robot.left_wheel.R)
@@ -323,6 +327,30 @@ def plot_convergence_profiles(real_robots: list[DDMR]) -> None:
 #:plot_convergence_profiles()
 
 
+def evaluate(new_trajectories: list[list[Trajectory]],
+             ideal_trajectories) -> None:
+    for new_traj_set_per_robot in new_trajectories:
+        assert len(new_traj_set_per_robot) == len(ideal_trajectories)
+        for (new_traj, ideal_traj) in zip(new_traj_set_per_robot, ideal_trajectories):
+            Δs, Δs_per_unit_length, length = \
+                eval.rate_trajectory(new_traj, ideal_traj)
+
+            _, ax = plt.subplots()
+            ax.plot(length, Δs)
+            ax.set_xlabel('Trajectory length (m)')
+            ax.set_ylabel('Separation from ref traj (m)')
+            plt.savefig(f'{kResultsDir}/{new_traj.name}-eval-sep.png')
+            plt.close()
+
+            print(f'Evaluation summary for trajectory {new_traj.name}:')
+            print(f'- Traj length  = {length[-1]} m')
+            print(f'    max Δs     = {np.max(Δs)} at {length[np.argmax(Δs)]} m')
+            print(f'    max Δs/len = {np.max(Δs_per_unit_length)} at {length[np.argmax(Δs_per_unit_length)]} m')
+        #: for (traj s)
+    #:for new_traj_set_per_robot
+#:evaluate()
+
+
 def evaluate_uncontrolled(real_robots: list[DDMR]) -> None:
     '''
     If system-identification was performed correctly, the learnt
@@ -333,9 +361,11 @@ def evaluate_uncontrolled(real_robots: list[DDMR]) -> None:
     ideal_trajectories = ideal.load_trajectories()
     learnt_robots = [DDMR(f'{kResultsDir}/robot-sysId-{robot.name}-mahalanobis-shuffled.yaml')
                      for robot in real_robots]
-    eval.run_robots_with_controls(learnt_robots,
-                                  ideal_trajectories,
-                                  kResultsDir)
+    new_trajectories = \
+        eval.run_robots_with_controls(learnt_robots,
+                                      ideal_trajectories,
+                                      kResultsDir)
+    evaluate(new_trajectories, ideal_trajectories)
 #:evaluate_uncontrolled()
 
 
@@ -351,9 +381,11 @@ def evaluate_controlled(real_robots: list[DDMR]) -> None:
                             verbose=False)
                          for robot in real_robots]
     ideal_trajectories = ideal.load_trajectories()
-    eval.run_robots_with_controls(controlled_robots,
-                                  ideal_trajectories,
-                                  kResultsDir)
+    new_trajectories = \
+        eval.run_robots_with_controls(controlled_robots,
+                                      ideal_trajectories,
+                                      kResultsDir)
+    evaluate(new_trajectories, ideal_trajectories)
 #:evaluate_controlled()
 
 if __name__ == "__main__":
