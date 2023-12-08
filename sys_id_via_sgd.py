@@ -1,17 +1,22 @@
 import numpy as np
 import os
 import time
+import matplotlib
+matplotlib.use('Agg') # suppress popup windows
 from matplotlib import pyplot as plt
 
 import eval
 import ideal
 import trajectory
+import robot
 from robot import DDMR
 from constants import *
 from wheel_model import NoisyWheel
 from kinematic_control import KinematicallyControlledDDMR
 
-Trajectory = trajectory.Trajectory # using namespace
+# using nanespace
+DDMR = robot.DDMR
+Trajectory = trajectory.Trajectory
 
 kResultsDir = 'Results/3-SysId_via_SGD'
 
@@ -250,15 +255,17 @@ def train(real_robots: list[DDMR]) -> None:
 
     for robot in real_robots:
         dataset = np.load(f'Results/2-Dataset/dataset-{robot.name}.npz')
+
         dataset_trajectory = Trajectory(dataset['t_measured'],
                                         dataset['s_measured'],
-                                        dataset['u_measured'],
-                                        Trajectory.Type(dataset['u_type_measured']),
-                                        name=f'dataset-{robot.name}-measured')
-        dataset_aux = np.vstack((dataset['v_measured'],
-                                 dataset['ω_measured'])).T
+                                        u=dataset['φdots_lr_measured'],
+                                        u_type=Trajectory.Type.WHEEL_DYNAMICS,
+                                        name=f'dataset-{robot.name}-wheelDynamical-measured')
+        dataset_v_ω = dataset['v_ω_measured']
 
-        κ_sqr = compute_κ_sqr(dataset_aux) # scaling parameter for Mahalanobis distance
+        # Scaling parameter for Mahalanobis distance.
+        κ_sqr = compute_κ_sqr(dataset_v_ω)  # <----- TODO: REVISIT
+
         print(f'Robot {robot.name} κ_sqr = {κ_sqr}')
         κ_sqrs = [κ_sqr, 1] # Mahalanobis distance metric-tensor parameter
 
@@ -277,7 +284,7 @@ def train(real_robots: list[DDMR]) -> None:
                 start_time_ns = time.time_ns()
                 R_ls, R_rs, L, epoch_losses = \
                     learn_system_params_via_SGD(dataset_trajectory, # X
-                                                dataset_aux,  # Y
+                                                dataset_v_ω,  # Y
                                                 ideal_robot,
                                                 N_φ, κ_sqrs[i_loss_type], α,
                                                 is_shuffling_enabled)
@@ -329,12 +336,31 @@ def plot_convergence_profiles(real_robots: list[DDMR]) -> None:
 
 
 def evaluate(new_trajectories: list[list[Trajectory]],
-             ideal_trajectories) -> None:
-    for new_traj_set_per_robot in new_trajectories:
-        assert len(new_traj_set_per_robot) == len(ideal_trajectories)
-        for (new_traj, ideal_traj) in zip(new_traj_set_per_robot, ideal_trajectories):
+             ref_trajectories: list[list[Trajectory]],
+             real_robots: list[DDMR]) \
+    -> None:
+
+    assert len(new_trajectories) == len(ref_trajectories) == len(real_robots)
+    for i in range(len(real_robots)):
+        new_trajs_per_robot = new_trajectories[i]
+        ref_trajs_per_robot = ref_trajectories[i]
+        real_robot = real_robots[i]
+        print('--------------------------------------')
+        print(f'Evaluating robot {real_robot.name}')
+        print('--------------------------------------')
+
+        for new_traj, ref_traj in zip(new_trajs_per_robot, ref_trajs_per_robot):
             Δs, Δs_per_unit_length, length = \
-                eval.rate_trajectory(new_traj, ideal_traj)
+                eval.rate_trajectory(new_traj, ref_traj)
+
+            _, ax = plt.subplots()
+            ax.plot(ref_traj.s[:,0], ref_traj.s[:,1], 'r-')
+            ax.plot(new_traj.s[:,0], new_traj.s[:,1], 'k-')
+            ax.set_xlabel('$x$ (m)')
+            ax.set_ylabel('$y$ (m)')
+            ax.set_title(f'{ref_traj.name} with sys-id control')
+            plt.savefig(f'{kResultsDir}/{new_traj.name}-overlap.png')
+            plt.close()
 
             _, ax = plt.subplots()
             ax.plot(length, Δs)
@@ -343,30 +369,37 @@ def evaluate(new_trajectories: list[list[Trajectory]],
             plt.savefig(f'{kResultsDir}/{new_traj.name}-eval-sep.png')
             plt.close()
 
-            print(f'Evaluation summary for trajectory {new_traj.name}:')
+            print(f'Evaluation summary for trajectory {new_traj.name} w.r.t. {ref_traj.name}:')
             print(f'- Traj length  = {length[-1]} m')
-            print(f'    max Δs     = {np.max(Δs)} at {length[np.argmax(Δs)]} m')
-            print(f'    max Δs/len = {np.max(Δs_per_unit_length)} at {length[np.argmax(Δs_per_unit_length)]} m')
-        #: for (traj s)
-    #:for new_traj_set_per_robot
+            print(f'- max Δs     = {np.max(Δs)} at {length[np.argmax(Δs)]} m')
+            print(f'- max Δs/len = {np.max(Δs_per_unit_length)} at {length[np.argmax(Δs_per_unit_length)]} m')
+        #:for
+    #:for i
 #:evaluate()
 
 
-def evaluate_uncontrolled(real_robots: list[DDMR]) -> None:
+def evaluate_uncontrolled_NOT_WORKING(real_robots: list[DDMR]) -> None:
     '''
     If system-identification was performed correctly, the learnt
     robots must produce the same trajectory as their target,
-    provided the same controls.
-    Here, the controls are those provided to the ideal robot.
+    provided the same (wheel-dynamical) controls.
+
+    Match the results here with those from real_behavior.py.
     '''
-    ideal_trajectories = ideal.load_trajectories()
+    ideal_trajectories = ideal.load_trajectories(['straight'])
     learnt_robots = [DDMR(f'{kResultsDir}/robot-sysId-{robot.name}-mahalanobis-shuffled.yaml')
                      for robot in real_robots]
-    new_trajectories = \
+    real_robot_trajectories = \
+        eval.run_robots_with_controls(real_robots,
+                                      ideal_trajectories,
+                                      kResultsDir)
+    learnt_robot_trajectories = \
         eval.run_robots_with_controls(learnt_robots,
                                       ideal_trajectories,
                                       kResultsDir)
-    evaluate(new_trajectories, ideal_trajectories)
+    evaluate(learnt_robot_trajectories,
+             real_robot_trajectories,
+             real_robots)
 #:evaluate_uncontrolled()
 
 
@@ -374,6 +407,9 @@ def evaluate_controlled(real_robots: list[DDMR]) -> None:
     '''
     Apply the kinematic controller to all learnt robots
     and hope that we match the ideal robot.
+
+    Here, we provide body-dynamical controls (v,ω) because this
+    is what the real-world use-case will provide.
     '''
     ideal_robot = DDMR('Robots/Ideal.yaml')
     controlled_robots = [KinematicallyControlledDDMR(
@@ -381,19 +417,41 @@ def evaluate_controlled(real_robots: list[DDMR]) -> None:
                             ideal_robot=ideal_robot,
                             verbose=False)
                          for robot in real_robots]
+    # ideal_trajectories = ideal.load_trajectories(['figureOf8', 'tri_wave_phi'])
     ideal_trajectories = ideal.load_trajectories()
+
+    # Convert from wheel-dynamical trajectory to body-dynamical trajectory
+    ideal_trajectories_wheel_to_body = []
+    for ideal_traj_wheel_dyn in ideal_trajectories:
+        assert ideal_traj_wheel_dyn.u_type == Trajectory.Type.WHEEL_DYNAMICS
+        v_ω = robot.translate_control_wheel_to_body(ideal_traj_wheel_dyn,
+                                                    ideal_robot)
+        ideal_traj_body_dyn = Trajectory(ideal_traj_wheel_dyn.t,
+                                         ideal_traj_wheel_dyn.s,
+                                         v_ω,
+                                         Trajectory.Type.BODY_DYNAMICS,
+                                         name=ideal_traj_wheel_dyn.name + '-wheel_to_body')
+        ideal_trajectories_wheel_to_body.append(ideal_traj_body_dyn)
+    #:for
+
+    # Evaluate if learning-based controller can match ideal robot given its
+    # desired body-dynamical trajectory.
     new_trajectories = \
         eval.run_robots_with_controls(controlled_robots,
-                                      ideal_trajectories,
+                                      ideal_trajectories_wheel_to_body,
                                       kResultsDir)
-    evaluate(new_trajectories, ideal_trajectories)
+    evaluate(new_trajectories,
+             [ideal_trajectories]*len(real_robots),
+             real_robots)
 #:evaluate_controlled()
 
 if __name__ == "__main__":
     os.makedirs(kResultsDir, exist_ok=True)
-    real_robots = [DDMR(f'Robots/{name}.yaml') for name in kRobotNames]
+    # real_robots = [DDMR(f'Robots/{name}.yaml') for name in kRobotNames]
+    robot_names = ['Noisy', 'Noisier']
+    real_robots = [DDMR(f'Robots/{name}.yaml') for name in robot_names]
     train(real_robots)
     plot_convergence_profiles(real_robots)
-    evaluate_uncontrolled(real_robots)
+    # evaluate_uncontrolled_NOT_WORKING(real_robots)
     evaluate_controlled(real_robots)
 #:__main__
