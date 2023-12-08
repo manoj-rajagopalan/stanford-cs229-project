@@ -203,11 +203,13 @@ def generate_trajectories(ideal_robot: robot.DDMR) -> dict:
     return result
 #: generate_trajectories()
 
-def load_trajectories():
+def load_trajectories(traj_keys: list[str] = None):
     npz = np.load(f'{kResultsDir}/ideal_trajectories.npz',
                   allow_pickle=True)
+    if traj_keys is None:
+        traj_keys = kIdealTrajectoryKeys
     ideal_trajectories = []
-    for traj_key in kIdealTrajectoryKeys:
+    for traj_key in traj_keys:
         traj_name = traj_key + '-Ideal'
         ideal_trajectory = Trajectory(npz['t_'+traj_name],
                                       npz['s_'+traj_name],
