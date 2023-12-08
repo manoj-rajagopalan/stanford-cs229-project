@@ -6,6 +6,7 @@ from wheel_model import wheel_factory
 from trajectory import Trajectory
 from constants import *
 
+
 class DDMR:
     def __init__(self, config_filename:str = None) -> None:
         if config_filename is None:
@@ -43,15 +44,13 @@ class DDMR:
 
         _, _, θ, φ_l, φ_r = s # x and y not used
         φdot_l, φdot_r = φ_dots
-        cosθ = np.cos(θ)
-        sinθ = np.sin(θ)
-        R = np.array([[cosθ, -sinθ], [sinθ, cosθ]])
         v_l = self.left_wheel.v(φ_l, φdot_l)
         v_r = self.right_wheel.v(φ_r, φdot_r)
-        xdot_ydot_robot_frame = np.array([0.5*(v_r+v_l), 0.0])
-        x_dot, y_dot = R @ xdot_ydot_robot_frame
-        θ_dot = (v_r - v_l) / (2 * self.L)
-        return np.array([x_dot, y_dot, θ_dot, φdot_l, φdot_r])
+        v = (v_r + v_l) / 2
+        x_dot, y_dot = v * np.cos(θ), v * np.sin(θ)
+        ω = (v_r - v_l) / (2 * self.L)
+        sdot = np.array([x_dot, y_dot, ω, φdot_l, φdot_r])
+        return sdot
     #: wheel_dynamics()
 
     def execute_wheel_control_policy(self,
@@ -77,21 +76,17 @@ class DDMR:
     def body_dynamics(self,
                       s: np.ndarray,
                       v_ω: np.ndarray) \
-        -> Trajectory:
+        -> np.ndarray:
 
         _, _, θ, φ_l, φ_r = s # x and y not used
         v, ω = v_ω
-        cosθ = np.cos(θ)
-        sinθ = np.sin(θ)
-        R = np.array([[cosθ, -sinθ], [sinθ, cosθ]])
         v_l = v - self.L * ω
         v_r = v + self.L * ω
+        x_dot, y_dot = v * np.cos(θ), v * np.sin(θ)
         φdot_l = v_l / self.left_wheel.radius_at(φ_l)
-        φdot_r = v_r / self.right_wheel.radius_at(φ_l)
-        xdot_ydot_robot_frame = np.array([0.5*(v_r+v_l), 0.0])
-        x_dot, y_dot = R @ xdot_ydot_robot_frame
-        θ_dot = (v_r - v_l) / (2 * self.L)
-        return np.array([x_dot, y_dot, θ_dot, φdot_l, φdot_r])
+        φdot_r = v_r / self.right_wheel.radius_at(φ_r)
+        sdot = np.array([x_dot, y_dot, ω, φdot_l, φdot_r])
+        return sdot
     #:body_dynamics()
 
     def execute_body_control_policy(self,
@@ -100,7 +95,7 @@ class DDMR:
                                     v_ω: np.ndarray,
                                     s0: np.ndarray = np.array([0, 0, 0, 0, 0]),
                                     name: str ='') \
-                -> Trajectory:
+        -> Trajectory:
 
         sol = scipy.integrate.solve_ivp(body_dynamics,
                                         (t[0], t[-1]), s0,
@@ -186,7 +181,45 @@ def body_dynamics(t: float,
 #: body_dynamics()
 
 
-# Tests
-if __name__ == "__main__":
-    noisier_robot = DDMR(config_filename='Robots/noisier.yaml')
-    noisier_robot.write_to_file(filename='Results/test-noisier.yaml')
+def translate_control_body_to_wheel(traj_body_dyn: Trajectory,
+                                    robot: DDMR) \
+    -> np.ndarray:
+
+    assert traj_body_dyn.u_type == Trajectory.Type.BODY_DYNAMICS
+    φdot_lr = np.zeros_like(traj_body_dyn.u)
+    for i in range(len(traj_body_dyn.u)):
+        s = traj_body_dyn.s[i]
+        v_ω = traj_body_dyn.u[i]
+        sdot = robot.body_dynamics(s, v_ω)
+        φdot_lr[i] = sdot[-2:]
+    #:for i
+    return φdot_lr
+#:translate_control_body_to_wheel()
+
+
+def translate_control_wheel_to_body(traj_wheel_dyn: Trajectory,
+                                    robot: DDMR) \
+    -> np.ndarray:
+
+    assert traj_wheel_dyn.u_type == Trajectory.Type.WHEEL_DYNAMICS
+    v_ω = np.zeros_like(traj_wheel_dyn.u)
+    for i in range(len(traj_wheel_dyn.u)):
+        s = traj_wheel_dyn.s[i]
+        φdot_lr = traj_wheel_dyn.u[i]
+        sdot = robot.wheel_dynamics(s, φdot_lr)
+        v_ω[i,0] = np.hypot(sdot[0], sdot[1])
+        if v_ω[i,0] != 0:
+            # Check if moving backwards.
+            θ_v_deg = np.mod(np.rad2deg(np.arctan2(sdot[1], sdot[0])), 360)
+            θ_deg = np.mod(np.rad2deg(s[2]), 360)
+
+            if np.abs(θ_deg - θ_v_deg) > 0.1:
+                # Moving backwards.
+                assert 179.9 < np.abs(θ_deg - θ_v_deg) < 180.1
+                v_ω[i,0] = -v_ω[i,0]
+            #:if
+        #:if
+        v_ω[i,1] = sdot[2]
+    #:for i
+    return v_ω
+#:translate_control_wheel_to_body()
