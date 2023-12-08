@@ -20,13 +20,8 @@ class KinematicController:
         This function translates u_ideal into a u_actual so that the actual robot
         we have behaves like the idea one.
         '''
-        # Compute desired v and θdot.
-        φdot_l_ideal, φdot_r_ideal = u_ideal
-        R_ideal = self.ideal_robot.left_wheel.R
-        v_l_ideal, v_r_ideal = R_ideal * φdot_l_ideal, R_ideal * φdot_r_ideal
-        v_desired = (1/2) * (v_r_ideal + v_l_ideal)
-        L_ideal = self.ideal_robot.L
-        ω_desired = (1/(2*L_ideal)) * (v_r_ideal - v_l_ideal)
+
+        v_desired, ω_desired = u_ideal
 
         # Now compute what actual φdot_l and φdot_r will provide these.
         _, _, _, φ_l, φ_r = s # x, y, θ not used
