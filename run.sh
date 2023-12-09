@@ -19,5 +19,5 @@ mkdir -p Results/3-SysId_via_SGD
 python3 sys_id_via_sgd.py | tee Results/3-SysId_via_SGD/sys_id_via_sgd.log
 
 # Second learning method - Model-Free control with Fully-Connected Neural Networks (FCNN)
-# mkdir -p Results/4-Model_Free_FCNN
-# python3 learn_fcnn_controller.py | tee Results/4-Model_Free_FCNN/learn_fcnn_controller.log
+mkdir -p Results/4-Model_Free_FCNN
+python3 learn_fcnn_controller.py | tee Results/4-Model_Free_FCNN/learn_fcnn_controller.log
